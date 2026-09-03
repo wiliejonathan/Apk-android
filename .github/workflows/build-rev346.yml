@@ -1,9 +1,9 @@
-name: Build REV349 Strict License Fresh Start
+name: Build REV350 Working Android Update Button
 
 on:
   push:
     branches:
-      - rev349-live-license-fresh-start
+      - rev350-working-update-button
   workflow_dispatch:
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore current Web runtime and apply REV349 strict license policy
+      - name: Restore current runtime and apply REV350 updater fix
         shell: bash
         run: |
           set -euo pipefail
@@ -37,12 +37,13 @@ jobs:
             rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
           cp rev346-build/payload/mobile-license-gate-rev349.js \
             rev346-build/app/src/main/assets/www/mobile-license-gate.js
+          cp rev346-build/payload/mobile-force-update-rev350.js \
+            rev346-build/app/src/main/assets/www/mobile-force-update.js
 
-          sed -i "s/versionCode 103/versionCode 106/" rev346-build/app/build.gradle
-          sed -i "s/versionName '1.16.62'/versionName '1.16.65'/" rev346-build/app/build.gradle
-
-          cp rev346-build/payload/mobile-force-update.js rev346-build/app/src/main/assets/www/mobile-force-update.js
-          sed -i "s/var CURRENT_TAG = 'v1.16.62';/var CURRENT_TAG = 'v1.16.65';/" rev346-build/app/src/main/assets/www/mobile-force-update.js
+          sed -i "s/versionCode 103/versionCode 107/" rev346-build/app/build.gradle
+          sed -i "s/versionName '1.16.62'/versionName '1.16.66'/" rev346-build/app/build.gradle
+          sed -i 's/return "v1.16.64"/return "v1.16.66"/' \
+            rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
 
           python3 rev346-build/payload/patch_rev349_runtime.py
 
@@ -51,21 +52,24 @@ jobs:
           import re
           p = Path('rev346-build/app/src/main/assets/www/index.html')
           s = p.read_text(encoding='utf-8')
-          if 'mobile-force-update.js' not in s:
-              marker = '<script src="mobile-license-gate.js'
-              pos = s.find(marker)
-              if pos < 0:
-                  raise SystemExit('mobile-license-gate marker not found')
-              s = s[:pos] + '<script src="mobile-force-update.js?rev=349"></script>\n' + s[pos:]
-          s = re.sub(r'\?rev=(?:344|345|346|347|348)', '?rev=349', s)
+          # Always ensure the REV350 updater loads before the license gate.
+          s = re.sub(r'<script src="mobile-force-update\.js\?rev=\d+"></script>\s*', '', s)
+          marker = '<script src="mobile-license-gate.js'
+          pos = s.find(marker)
+          if pos < 0:
+              raise SystemExit('mobile-license-gate marker not found')
+          s = s[:pos] + '<script src="mobile-force-update.js?rev=350"></script>\n' + s[pos:]
+          s = re.sub(r'\?rev=(?:344|345|346|347|348|349)', '?rev=350', s)
           p.write_text(s, encoding='utf-8')
 
           sw = Path('rev346-build/app/src/main/assets/www/service-worker.js')
           if sw.exists():
               t = sw.read_text(encoding='utf-8')
-              if 'mobile-force-update.js?rev=349' not in t:
-                  t = t.replace("  './mobile-license-gate.js?rev=349',",
-                                "  './mobile-force-update.js?rev=349',\n  './mobile-license-gate.js?rev=349',")
+              t = re.sub(r'\?rev=(?:344|345|346|347|348|349)', '?rev=350', t)
+              if 'mobile-force-update.js?rev=350' not in t:
+                  t = t.replace("  './mobile-license-gate.js?rev=350',",
+                                "  './mobile-force-update.js?rev=350',\n  './mobile-license-gate.js?rev=350',")
+              t += '\n// REV350: update button reads latest GitHub APK on every tap; no capture-phase click blocker.\n'
               sw.write_text(t, encoding='utf-8')
           PY
 
@@ -75,11 +79,10 @@ jobs:
           node --check rev346-build/app/src/main/assets/www/mobile-license-gate.js
           node --check rev346-build/app/src/main/assets/www/mobile-remote.js
           node --check rev346-build/app/src/main/assets/www/assets/dashboard-mobile.js
-          grep -q 'return "v1.16.65"' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
-          grep -q 'WebStorage.getInstance().deleteAllData' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
-          grep -q 'LOAD_NO_CACHE' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
-          grep -q '__TF_MOBILE_AUTH_V349' rev346-build/app/src/main/assets/www/mobile-remote.js
-          grep -q "'/license-check'" rev346-build/app/src/main/assets/www/mobile-license-gate.js
+          grep -q 'return "v1.16.66"' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
+          grep -q 'fetchLatestApkInfo' rev346-build/app/src/main/assets/www/mobile-force-update.js
+          grep -q "MEMBACA RELEASE TERBARU" rev346-build/app/src/main/assets/www/mobile-force-update.js
+          ! grep -q "el.addEventListener('click',function(e){ e.stopPropagation(); },true)" rev346-build/app/src/main/assets/www/mobile-force-update.js
           grep -q 'startUpdatePolling' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
           grep -q 'ACTION_INSTALL_PACKAGE' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
 
@@ -95,11 +98,11 @@ jobs:
           mkdir -p rev346-build/dist
           "$BUILD_TOOLS/zipalign" -f 4 \
             rev346-build/app/build/outputs/apk/release/app-release-unsigned.apk \
-            rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_14-unsigned-aligned.apk
+            rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_15-unsigned-aligned.apk
 
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
-          name: rev349-unsigned-apk
-          path: rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_14-unsigned-aligned.apk
+          name: rev350-unsigned-apk
+          path: rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_15-unsigned-aligned.apk
           if-no-files-found: error
