@@ -1,9 +1,9 @@
-name: Build REV346 Android Forced Updater
+name: Build REV347 Android Touch Tooltip Offset
 
 on:
   push:
     branches:
-      - rev346-forced-update-build
+      - rev347-touch-tooltip-build-prod4
   workflow_dispatch:
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore Web runtime and apply REV345 + REV346 patches
+      - name: Restore Web runtime and apply REV345 + REV346 + REV347 patches
         shell: bash
         run: |
           set -euo pipefail
@@ -34,7 +34,9 @@ jobs:
           rsync -a --exclude=.git /tmp/web/ rev346-build/app/src/main/assets/www/
 
           python3 rev346-build/payload/patch_rev345_axis.py
+          python3 rev346-build/payload/patch_rev347_tooltip.py
           cp rev346-build/payload/mobile-force-update.js rev346-build/app/src/main/assets/www/mobile-force-update.js
+          sed -i "s/var CURRENT_TAG = 'v1.16.62';/var CURRENT_TAG = 'v1.16.63';/" rev346-build/app/src/main/assets/www/mobile-force-update.js
 
           python3 - <<'PY'
           from pathlib import Path
@@ -45,20 +47,20 @@ jobs:
               pos = s.find(marker)
               if pos < 0:
                   raise SystemExit('mobile-license-gate marker not found')
-              s = s[:pos] + '<script src="mobile-force-update.js?rev=346"></script>\n' + s[pos:]
-          s = s.replace('?rev=344', '?rev=346')
+              s = s[:pos] + '<script src="mobile-force-update.js?rev=347"></script>\n' + s[pos:]
+          import re
+          s = re.sub(r'\?rev=(?:344|345|346)', '?rev=347', s)
           p.write_text(s, encoding='utf-8')
 
           sw = Path('rev346-build/app/src/main/assets/www/service-worker.js')
           if sw.exists():
               t = sw.read_text(encoding='utf-8')
-              t = t.replace('tf-analyzer-analyst-mobile-v140-rev344-tight-equity-axis',
-                            'tf-analyzer-analyst-mobile-v142-rev346-forced-update')
-              t = t.replace('?rev=344', '?rev=346')
-              if 'mobile-force-update.js?rev=346' not in t:
-                  t = t.replace("  './mobile-license-gate.js?rev=346',",
-                                "  './mobile-force-update.js?rev=346',\n  './mobile-license-gate.js?rev=346',")
-              t += '\n// REV346: Android mandatory GitHub release updater + percentage Equity axis.\n'
+              t = re.sub(r"const CACHE='[^']+';", "const CACHE='tf-analyzer-analyst-mobile-v143-rev347-touch-tooltip-offset';", t, count=1)
+              t = re.sub(r'\?rev=(?:344|345|346)', '?rev=347', t)
+              if 'mobile-force-update.js?rev=347' not in t:
+                  t = t.replace("  './mobile-license-gate.js?rev=347',",
+                                "  './mobile-force-update.js?rev=347',\n  './mobile-license-gate.js?rev=347',")
+              t += '\n// REV347: touch tooltip offset from finger + mandatory GitHub updater retained.\n'
               sw.write_text(t, encoding='utf-8')
           PY
 
@@ -79,11 +81,11 @@ jobs:
           mkdir -p rev346-build/dist
           "$BUILD_TOOLS/zipalign" -f 4 \
             rev346-build/app/build/outputs/apk/release/app-release-unsigned.apk \
-            rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_11-unsigned-aligned.apk
+            rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_12-unsigned-aligned.apk
 
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
-          name: rev346-unsigned-apk
-          path: rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_11-unsigned-aligned.apk
+          name: rev347-unsigned-apk
+          path: rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_12-unsigned-aligned.apk
           if-no-files-found: error
