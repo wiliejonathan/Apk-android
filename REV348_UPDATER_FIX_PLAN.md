@@ -1,0 +1,1 @@
+REV348 updater fix branch marker. Native updater is changed to start the APK download immediately, poll DownloadManager as a fallback to broadcast delivery, request unknown-source permission only after the download finishes, and then open Android Package Installer.
