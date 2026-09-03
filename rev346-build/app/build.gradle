@@ -1,0 +1,23 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.skillfusion.tfmultianalystmobil3'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.skillfusion.tfmultianalystmobil0'
+        minSdk 24
+        targetSdk 29
+        versionCode 103
+        versionName '1.16.62'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+}
