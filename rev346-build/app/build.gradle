@@ -10,8 +10,8 @@ android {
         applicationId 'com.skillfusion.tfmultianalystmobil0'
         minSdk 24
         targetSdk 29
-        versionCode 103
-        versionName '1.16.62'
+        versionCode 104
+        versionName '1.16.63'
     }
 
     buildTypes {
