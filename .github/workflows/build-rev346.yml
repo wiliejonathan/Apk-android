@@ -1,9 +1,9 @@
-name: Build REV347 Android Touch Tooltip Offset
+name: Build REV348 Android Updater Fix
 
 on:
   push:
     branches:
-      - rev347-touch-tooltip-build-prod4
+      - rev348-updater-fix
   workflow_dispatch:
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore Web runtime and apply REV346 + REV347 patches
+      - name: Restore runtime and apply REV347 + REV348
         shell: bash
         run: |
           set -euo pipefail
@@ -33,9 +33,19 @@ jobs:
           mkdir -p rev346-build/app/src/main/res/drawable
           rsync -a --exclude=.git /tmp/web/ rev346-build/app/src/main/assets/www/
 
+          # Keep REV347 touch-safe tooltip behavior.
           python3 rev346-build/payload/patch_rev347_tooltip.py
+
+          # REV348 native updater implementation.
+          cp rev346-build/payload/MainActivityREV348.java.txt \
+            rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
+
+          # Android version for next mandatory-update baseline.
+          sed -i "s/versionCode 103/versionCode 105/" rev346-build/app/build.gradle
+          sed -i "s/versionName '1.16.62'/versionName '1.16.64'/" rev346-build/app/build.gradle
+
           cp rev346-build/payload/mobile-force-update.js rev346-build/app/src/main/assets/www/mobile-force-update.js
-          sed -i "s/var CURRENT_TAG = 'v1.16.62';/var CURRENT_TAG = 'v1.16.63';/" rev346-build/app/src/main/assets/www/mobile-force-update.js
+          sed -i "s/var CURRENT_TAG = 'v1.16.62';/var CURRENT_TAG = 'v1.16.64';/" rev346-build/app/src/main/assets/www/mobile-force-update.js
 
           python3 - <<'PY'
           from pathlib import Path
@@ -47,19 +57,19 @@ jobs:
               pos = s.find(marker)
               if pos < 0:
                   raise SystemExit('mobile-license-gate marker not found')
-              s = s[:pos] + '<script src="mobile-force-update.js?rev=347"></script>\n' + s[pos:]
-          s = re.sub(r'\?rev=(?:344|345|346)', '?rev=347', s)
+              s = s[:pos] + '<script src="mobile-force-update.js?rev=348"></script>\n' + s[pos:]
+          s = re.sub(r'\?rev=(?:344|345|346|347)', '?rev=348', s)
           p.write_text(s, encoding='utf-8')
 
           sw = Path('rev346-build/app/src/main/assets/www/service-worker.js')
           if sw.exists():
               t = sw.read_text(encoding='utf-8')
-              t = re.sub(r"const CACHE='[^']+';", "const CACHE='tf-analyzer-analyst-mobile-v143-rev347-touch-tooltip-offset';", t, count=1)
-              t = re.sub(r'\?rev=(?:344|345|346)', '?rev=347', t)
-              if 'mobile-force-update.js?rev=347' not in t:
-                  t = t.replace("  './mobile-license-gate.js?rev=347',",
-                                "  './mobile-force-update.js?rev=347',\n  './mobile-license-gate.js?rev=347',")
-              t += '\n// REV347: touch tooltip offset from finger + mandatory GitHub updater retained.\n'
+              t = re.sub(r"const CACHE='[^']+';", "const CACHE='tf-analyzer-analyst-mobile-v144-rev348-updater-fix';", t, count=1)
+              t = re.sub(r'\?rev=(?:344|345|346|347)', '?rev=348', t)
+              if 'mobile-force-update.js?rev=348' not in t:
+                  t = t.replace("  './mobile-license-gate.js?rev=348',",
+                                "  './mobile-force-update.js?rev=348',\n  './mobile-license-gate.js?rev=348',")
+              t += '\n// REV348: robust Android DownloadManager updater with polling + installer fallback.\n'
               sw.write_text(t, encoding='utf-8')
           PY
 
@@ -67,6 +77,9 @@ jobs:
 
           node --check rev346-build/app/src/main/assets/www/mobile-force-update.js
           node --check rev346-build/app/src/main/assets/www/assets/dashboard-mobile.js
+          grep -q 'return "v1.16.64"' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
+          grep -q 'startUpdatePolling' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
+          grep -q 'ACTION_INSTALL_PACKAGE' rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
 
       - name: Build release APK
         working-directory: rev346-build
@@ -80,11 +93,11 @@ jobs:
           mkdir -p rev346-build/dist
           "$BUILD_TOOLS/zipalign" -f 4 \
             rev346-build/app/build/outputs/apk/release/app-release-unsigned.apk \
-            rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_12-unsigned-aligned.apk
+            rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_13-unsigned-aligned.apk
 
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
-          name: rev347-unsigned-apk
-          path: rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_12-unsigned-aligned.apk
+          name: rev348-unsigned-apk
+          path: rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_13-unsigned-aligned.apk
           if-no-files-found: error
