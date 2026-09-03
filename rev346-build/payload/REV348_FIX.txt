@@ -1,0 +1,1 @@
+REV348 robust mandatory updater: immediate download, DownloadManager polling fallback, permission after download, reliable installer launch.
