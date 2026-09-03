@@ -24,7 +24,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore Web runtime and apply REV345 + REV346 + REV347 patches
+      - name: Restore Web runtime and apply REV346 + REV347 patches
         shell: bash
         run: |
           set -euo pipefail
@@ -33,13 +33,13 @@ jobs:
           mkdir -p rev346-build/app/src/main/res/drawable
           rsync -a --exclude=.git /tmp/web/ rev346-build/app/src/main/assets/www/
 
-          python3 rev346-build/payload/patch_rev345_axis.py
           python3 rev346-build/payload/patch_rev347_tooltip.py
           cp rev346-build/payload/mobile-force-update.js rev346-build/app/src/main/assets/www/mobile-force-update.js
           sed -i "s/var CURRENT_TAG = 'v1.16.62';/var CURRENT_TAG = 'v1.16.63';/" rev346-build/app/src/main/assets/www/mobile-force-update.js
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('rev346-build/app/src/main/assets/www/index.html')
           s = p.read_text(encoding='utf-8')
           if 'mobile-force-update.js' not in s:
@@ -48,7 +48,6 @@ jobs:
               if pos < 0:
                   raise SystemExit('mobile-license-gate marker not found')
               s = s[:pos] + '<script src="mobile-force-update.js?rev=347"></script>\n' + s[pos:]
-          import re
           s = re.sub(r'\?rev=(?:344|345|346)', '?rev=347', s)
           p.write_text(s, encoding='utf-8')
 
