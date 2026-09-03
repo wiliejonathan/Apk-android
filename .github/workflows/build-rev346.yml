@@ -1,0 +1,89 @@
+name: Build REV346 Android Forced Updater
+
+on:
+  push:
+    branches:
+      - rev346-forced-update-build
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore Web runtime and apply REV345 + REV346 patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/wiliejonathan/tf-analyzer-analyst-ios.git /tmp/web
+          mkdir -p rev346-build/app/src/main/assets/www
+          mkdir -p rev346-build/app/src/main/res/drawable
+          rsync -a --exclude=.git /tmp/web/ rev346-build/app/src/main/assets/www/
+
+          python3 rev346-build/payload/patch_rev345_axis.py
+          cp rev346-build/payload/mobile-force-update.js rev346-build/app/src/main/assets/www/mobile-force-update.js
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('rev346-build/app/src/main/assets/www/index.html')
+          s = p.read_text(encoding='utf-8')
+          if 'mobile-force-update.js' not in s:
+              marker = '<script src="mobile-license-gate.js'
+              pos = s.find(marker)
+              if pos < 0:
+                  raise SystemExit('mobile-license-gate marker not found')
+              s = s[:pos] + '<script src="mobile-force-update.js?rev=346"></script>\n' + s[pos:]
+          s = s.replace('?rev=344', '?rev=346')
+          p.write_text(s, encoding='utf-8')
+
+          sw = Path('rev346-build/app/src/main/assets/www/service-worker.js')
+          if sw.exists():
+              t = sw.read_text(encoding='utf-8')
+              t = t.replace('tf-analyzer-analyst-mobile-v140-rev344-tight-equity-axis',
+                            'tf-analyzer-analyst-mobile-v142-rev346-forced-update')
+              t = t.replace('?rev=344', '?rev=346')
+              if 'mobile-force-update.js?rev=346' not in t:
+                  t = t.replace("  './mobile-license-gate.js?rev=346',",
+                                "  './mobile-force-update.js?rev=346',\n  './mobile-license-gate.js?rev=346',")
+              t += '\n// REV346: Android mandatory GitHub release updater + percentage Equity axis.\n'
+              sw.write_text(t, encoding='utf-8')
+          PY
+
+          cp rev346-build/app/src/main/assets/www/icons/icon-192.png rev346-build/app/src/main/res/drawable/tf_icon.png
+
+          node --check rev346-build/app/src/main/assets/www/mobile-force-update.js
+          node --check rev346-build/app/src/main/assets/www/assets/dashboard-mobile.js
+
+      - name: Build release APK
+        working-directory: rev346-build
+        run: gradle :app:assembleRelease --no-daemon
+
+      - name: Zipalign unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          mkdir -p rev346-build/dist
+          "$BUILD_TOOLS/zipalign" -f 4 \
+            rev346-build/app/build/outputs/apk/release/app-release-unsigned.apk \
+            rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_11-unsigned-aligned.apk
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rev346-unsigned-apk
+          path: rev346-build/dist/TF.Analyzer.Analyst.V1.16.56_11-unsigned-aligned.apk
+          if-no-files-found: error
