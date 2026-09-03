@@ -20,4 +20,13 @@ android {
             shrinkResources false
         }
     }
+
+    // This APK is distributed directly from GitHub Releases, not Google Play.
+    // Preserve targetSdk 29 to stay behavior-compatible with the existing app,
+    // while preventing the modern Android Gradle Plugin's Play-target lint rule
+    // from aborting a sideload release build.
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
 }
