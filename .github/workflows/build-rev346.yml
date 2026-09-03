@@ -45,14 +45,11 @@ jobs:
           sed -i 's/return "v1.16.64"/return "v1.16.66"/' \
             rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
 
-          python3 rev346-build/payload/patch_rev349_runtime.py
-
           python3 - <<'PY'
           from pathlib import Path
           import re
           p = Path('rev346-build/app/src/main/assets/www/index.html')
           s = p.read_text(encoding='utf-8')
-          # Always ensure the REV350 updater loads before the license gate.
           s = re.sub(r'<script src="mobile-force-update\.js\?rev=\d+"></script>\s*', '', s)
           marker = '<script src="mobile-license-gate.js'
           pos = s.find(marker)
