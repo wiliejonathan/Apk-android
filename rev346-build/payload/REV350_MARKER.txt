@@ -1,0 +1,1 @@
+REV350 - Working GitHub latest-release Download & Install button. Fixes capture-phase event blocker and refreshes latest APK asset on every tap.
