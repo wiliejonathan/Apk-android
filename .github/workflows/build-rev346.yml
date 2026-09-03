@@ -24,7 +24,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore runtime and apply REV347 + REV348
+      - name: Restore current Web runtime and apply REV348 native updater
         shell: bash
         run: |
           set -euo pipefail
@@ -33,14 +33,9 @@ jobs:
           mkdir -p rev346-build/app/src/main/res/drawable
           rsync -a --exclude=.git /tmp/web/ rev346-build/app/src/main/assets/www/
 
-          # Keep REV347 touch-safe tooltip behavior.
-          python3 rev346-build/payload/patch_rev347_tooltip.py
-
-          # REV348 native updater implementation.
           cp rev346-build/payload/MainActivityREV348.java.txt \
             rev346-build/app/src/main/java/com/skillfusion/tfmultianalystmobil3/MainActivity.java
 
-          # Android version for next mandatory-update baseline.
           sed -i "s/versionCode 103/versionCode 105/" rev346-build/app/build.gradle
           sed -i "s/versionName '1.16.62'/versionName '1.16.64'/" rev346-build/app/build.gradle
 
