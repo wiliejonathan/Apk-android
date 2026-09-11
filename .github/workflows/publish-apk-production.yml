@@ -28,38 +28,66 @@ jobs:
             echo "ASSET=$ASSET"
             echo "BASE_TAG=$BASE_TAG"
             echo "BASE_ASSET=$BASE_ASSET"
-            echo "APK_SHA256=$APK_SHA256"
             echo "SIGNER_SHA256=$SIGNER_SHA256"
+            echo "SIGPACK_SHA256=$SIGPACK_SHA256"
           } >> "$GITHUB_ENV"
 
-      - name: Ensure zstd is available
+      - name: Ensure build tools are available
         shell: bash
         run: |
+          set -euo pipefail
           if ! command -v zstd >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y zstd
           fi
 
-      - name: Reconstruct signed production APK from stable base
+      - name: Reconstruct production-signed REV372 APK
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/tf-rev372/base
+          ROOT=/tmp/tf-rev372
+          mkdir -p "$ROOT/base" "$ROOT/sigs"
+
           gh release download "$BASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "$BASE_ASSET" \
-            --dir /tmp/tf-rev372/base
-          base64 -d release-staging/REV372-production/rev352_to_rev372.zst.b64 > /tmp/tf-rev372/rev352_to_rev372.zst
-          zstd -q -d \
-            --patch-from="/tmp/tf-rev372/base/$BASE_ASSET" \
-            /tmp/tf-rev372/rev352_to_rev372.zst \
-            -o "/tmp/tf-rev372/$ASSET"
-          echo "$APK_SHA256  /tmp/tf-rev372/$ASSET" | sha256sum -c -
-          jarsigner -verify "/tmp/tf-rev372/$ASSET" >/dev/null
-          keytool -printcert -jarfile "/tmp/tf-rev372/$ASSET" > /tmp/tf-rev372/cert.txt
-          grep -F "SHA256: $SIGNER_SHA256" /tmp/tf-rev372/cert.txt
+            --dir "$ROOT/base"
+
+          base64 -d release-staging/REV372-production/signature_pack.tar.zst.b64 > "$ROOT/signature_pack.tar.zst"
+          echo "$SIGPACK_SHA256  $ROOT/signature_pack.tar.zst" | sha256sum -c -
+          zstd -q -d "$ROOT/signature_pack.tar.zst" -o "$ROOT/signature_pack.tar"
+          tar -xf "$ROOT/signature_pack.tar" -C "$ROOT/sigs"
+
+          python3 release-staging/REV372-production/build_rev372_prod.py \
+            "$ROOT/base/$BASE_ASSET" \
+            "$ROOT/sigs" \
+            "$ROOT/$ASSET"
+
+          jarsigner -verify "$ROOT/$ASSET" >/dev/null
+          keytool -printcert -jarfile "$ROOT/$ASSET" > "$ROOT/cert.txt"
+          grep -F "SHA256: $SIGNER_SHA256" "$ROOT/cert.txt"
+
+          unzip -p "$ROOT/$ASSET" assets/www/mobile-remote.js | \
+            grep -F "q('tf-remote-dashboard').addEventListener('click',()=>openMobileDashboardHome());"
+          unzip -p "$ROOT/$ASSET" assets/www/mobile-force-update.js | \
+            grep -F "var CURRENT_TAG = 'v1.16.69';"
+          unzip -p "$ROOT/$ASSET" assets/www/service-worker.js | \
+            grep -F "rev372-dashboard-home-local"
+
+          unzip -p "$ROOT/$ASSET" AndroidManifest.xml > "$ROOT/AndroidManifest.xml"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/tf-rev372/AndroidManifest.xml').read_bytes()
+          assert p.count('1.16.69'.encode('utf-16le')) == 1
+          code = bytes([0x08,0x00,0x00,0x10]) + (110).to_bytes(4,'little')
+          assert p.count(code) == 1
+          print('Manifest versionName=1.16.69 versionCode=110: PASS')
+          PY
+
+          unzip -tq "$ROOT/$ASSET"
+          sha256sum "$ROOT/$ASSET" | tee "$ROOT/$ASSET.sha256"
 
       - name: Publish stable GitHub Release
         env:
@@ -69,6 +97,7 @@ jobs:
           set -euo pipefail
           NOTES=release-staging/REV372-production/RELEASE_NOTES.md
           APK="/tmp/tf-rev372/$ASSET"
+
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
