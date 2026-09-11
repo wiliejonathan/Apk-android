@@ -1,0 +1,144 @@
+name: Publish APK hotfix test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/**/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build and publish fresh-install APK test
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          READY=$(find release-staging -name READY -type f -print0 | xargs -0 -r ls -t | head -n 1)
+          test -n "$READY"
+          DIR=$(dirname "$READY")
+          source "$DIR/release.env"
+          test -f "$DIR/RELEASE_NOTES.md"
+
+          rm -rf /tmp/tf-apk-hotfix
+          mkdir -p /tmp/tf-apk-hotfix/www
+          gh release download "$BASE_TAG" --pattern "$BASE_ASSET" --dir /tmp/tf-apk-hotfix
+          cp "/tmp/tf-apk-hotfix/$BASE_ASSET" "/tmp/$ASSET"
+
+          unzip -p "/tmp/$ASSET" assets/www/index.html > /tmp/tf-apk-hotfix/www/index.html
+          unzip -p "/tmp/$ASSET" assets/www/service-worker.js > /tmp/tf-apk-hotfix/www/service-worker.js
+          unzip -p "/tmp/$ASSET" assets/www/mobile-force-update.js > /tmp/tf-apk-hotfix/www/mobile-force-update.js
+
+          cat > /tmp/tf-apk-hotfix/www/mobile-remote-dashboard-home-hotfix.js <<'EOF'
+          (function(){
+            'use strict';
+            function goMobileHome(){
+              try{
+                var back=document.getElementById('tf-remote-back');
+                if(back){ back.click(); }
+                else if(history.state && history.state.tfRemotePage){ history.back(); }
+              }catch(_){ }
+              setTimeout(function(){
+                try{
+                  if(typeof window.tfMobileGoHome==='function'){ window.tfMobileGoHome(); return; }
+                  var home=document.querySelector('[data-mobile-nav="table1"]');
+                  if(home){ home.click(); return; }
+                  window.scrollTo({top:0,behavior:'auto'});
+                }catch(_){ }
+              },60);
+            }
+            document.addEventListener('click',function(event){
+              var target=event.target;
+              var button=target && target.closest ? target.closest('#tf-remote-dashboard') : null;
+              if(!button)return;
+              event.preventDefault();
+              event.stopPropagation();
+              if(typeof event.stopImmediatePropagation==='function')event.stopImmediatePropagation();
+              goMobileHome();
+            },true);
+          })();
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/tf-apk-hotfix/www/index.html')
+          s=p.read_text()
+          needle='<script src="mobile-license-gate.js?rev=352"></script>'
+          if needle not in s:
+              raise SystemExit('mobile-license-gate marker not found')
+          s=s.replace(needle, needle+'\n<script src="mobile-remote-dashboard-home-hotfix.js?rev=372"></script>',1)
+          p.write_text(s)
+
+          p=Path('/tmp/tf-apk-hotfix/www/service-worker.js')
+          s=p.read_text()
+          lines=s.splitlines()
+          if lines and lines[0].startswith('const CACHE='):
+              lines[0]="const CACHE='tf-analyzer-analyst-mobile-v149-rev372-dashboard-home-hotfix';"
+          s='\n'.join(lines)+'\n'
+          marker="  './mobile-license-gate.js?rev=352',\n"
+          if marker not in s:
+              raise SystemExit('service worker marker not found')
+          s=s.replace(marker,marker+"  './mobile-remote-dashboard-home-hotfix.js?rev=372',\n",1)
+          s+='\n// REV372: Remote Dashboard routes locally to Mobile home.\n'
+          p.write_text(s)
+
+          p=Path('/tmp/tf-apk-hotfix/www/mobile-force-update.js')
+          s=p.read_text().replace("var CURRENT_TAG = 'v1.16.68';","var CURRENT_TAG = 'v1.16.69';")
+          p.write_text(s)
+          PY
+
+          (cd /tmp/tf-apk-hotfix/www && printf '%s\n' 'TF Analyzer Analyst Android REV372 test build — Remote Dashboard returns to Mobile home.' > README_REV372.txt)
+
+          zip -d "/tmp/$ASSET" 'META-INF/*.RSA' 'META-INF/*.SF' 'META-INF/MANIFEST.MF' >/dev/null || true
+          (cd /tmp/tf-apk-hotfix/www && zip -u "/tmp/$ASSET" index.html service-worker.js mobile-force-update.js mobile-remote-dashboard-home-hotfix.js README_REV372.txt -j >/dev/null)
+          # Move the five updated files to their APK asset paths by rebuilding the archive safely.
+          python3 - <<'PY'
+          import zipfile, os, shutil
+          apk=os.environ['ASSET'] if 'ASSET' in os.environ else None
+          src='/tmp/'+os.environ.get('ASSET','')
+          tmp=src+'.rebuilt'
+          updates={
+            'assets/www/index.html':'/tmp/tf-apk-hotfix/www/index.html',
+            'assets/www/service-worker.js':'/tmp/tf-apk-hotfix/www/service-worker.js',
+            'assets/www/mobile-force-update.js':'/tmp/tf-apk-hotfix/www/mobile-force-update.js',
+            'assets/www/mobile-remote-dashboard-home-hotfix.js':'/tmp/tf-apk-hotfix/www/mobile-remote-dashboard-home-hotfix.js',
+            'assets/www/README_REV372.txt':'/tmp/tf-apk-hotfix/www/README_REV372.txt',
+          }
+          with zipfile.ZipFile(src,'r') as zin, zipfile.ZipFile(tmp,'w') as zout:
+            seen=set()
+            for info in zin.infolist():
+              name=info.filename
+              if name in {'index.html','service-worker.js','mobile-force-update.js','mobile-remote-dashboard-home-hotfix.js','README_REV372.txt'}:
+                continue
+              if name.upper().startswith('META-INF/') and (name.upper().endswith('.RSA') or name.upper().endswith('.SF') or name.upper().endswith('MANIFEST.MF')):
+                continue
+              seen.add(name)
+              data=open(updates[name],'rb').read() if name in updates else zin.read(name)
+              ni=zipfile.ZipInfo(name,info.date_time); ni.compress_type=info.compress_type; ni.external_attr=info.external_attr; ni.internal_attr=info.internal_attr; ni.create_system=info.create_system; ni.extra=info.extra; ni.comment=info.comment
+              zout.writestr(ni,data)
+            for name,path in updates.items():
+              if name not in seen: zout.write(path,name,compress_type=zipfile.ZIP_DEFLATED)
+          shutil.move(tmp,src)
+          PY
+
+          keytool -genkeypair -keystore /tmp/rev372-test.jks -storepass 'Rev372TestOnly2026' -keypass 'Rev372TestOnly2026' -alias tfanalyzer-test -keyalg RSA -keysize 2048 -validity 3650 -dname 'CN=TF Analyzer Analyst TEST, OU=Development, O=Skill Fusion, L=Pontianak, ST=West Kalimantan, C=ID'
+          jarsigner -keystore /tmp/rev372-test.jks -storepass 'Rev372TestOnly2026' -keypass 'Rev372TestOnly2026' -sigalg SHA256withRSA -digestalg SHA-256 "/tmp/$ASSET" tfanalyzer-test
+          jarsigner -verify "/tmp/$ASSET" >/dev/null
+          unzip -p "/tmp/$ASSET" assets/www/index.html | grep -q 'mobile-remote-dashboard-home-hotfix.js?rev=372'
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$DIR/RELEASE_NOTES.md" --prerelease
+            gh release upload "$TAG" "/tmp/$ASSET" --clobber
+          else
+            gh release create "$TAG" "/tmp/$ASSET" --target main --title "$TITLE" --notes-file "$DIR/RELEASE_NOTES.md" --prerelease
+          fi
