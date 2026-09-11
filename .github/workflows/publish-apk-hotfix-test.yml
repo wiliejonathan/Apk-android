@@ -27,7 +27,9 @@ jobs:
           READY=$(find release-staging -name READY -type f -print0 | xargs -0 -r ls -t | head -n 1)
           test -n "$READY"
           DIR=$(dirname "$READY")
+          set -a
           source "$DIR/release.env"
+          set +a
           test -f "$DIR/RELEASE_NOTES.md"
 
           rm -rf /tmp/tf-apk-hotfix
@@ -97,15 +99,11 @@ jobs:
           p.write_text(s)
           PY
 
-          (cd /tmp/tf-apk-hotfix/www && printf '%s\n' 'TF Analyzer Analyst Android REV372 test build — Remote Dashboard returns to Mobile home.' > README_REV372.txt)
+          printf '%s\n' 'TF Analyzer Analyst Android REV372 test build — Remote Dashboard returns to Mobile home.' > /tmp/tf-apk-hotfix/www/README_REV372.txt
 
-          zip -d "/tmp/$ASSET" 'META-INF/*.RSA' 'META-INF/*.SF' 'META-INF/MANIFEST.MF' >/dev/null || true
-          (cd /tmp/tf-apk-hotfix/www && zip -u "/tmp/$ASSET" index.html service-worker.js mobile-force-update.js mobile-remote-dashboard-home-hotfix.js README_REV372.txt -j >/dev/null)
-          # Move the five updated files to their APK asset paths by rebuilding the archive safely.
           python3 - <<'PY'
           import zipfile, os, shutil
-          apk=os.environ['ASSET'] if 'ASSET' in os.environ else None
-          src='/tmp/'+os.environ.get('ASSET','')
+          src='/tmp/'+os.environ['ASSET']
           tmp=src+'.rebuilt'
           updates={
             'assets/www/index.html':'/tmp/tf-apk-hotfix/www/index.html',
@@ -118,16 +116,21 @@ jobs:
             seen=set()
             for info in zin.infolist():
               name=info.filename
-              if name in {'index.html','service-worker.js','mobile-force-update.js','mobile-remote-dashboard-home-hotfix.js','README_REV372.txt'}:
-                continue
               if name.upper().startswith('META-INF/') and (name.upper().endswith('.RSA') or name.upper().endswith('.SF') or name.upper().endswith('MANIFEST.MF')):
                 continue
               seen.add(name)
               data=open(updates[name],'rb').read() if name in updates else zin.read(name)
-              ni=zipfile.ZipInfo(name,info.date_time); ni.compress_type=info.compress_type; ni.external_attr=info.external_attr; ni.internal_attr=info.internal_attr; ni.create_system=info.create_system; ni.extra=info.extra; ni.comment=info.comment
+              ni=zipfile.ZipInfo(name,info.date_time)
+              ni.compress_type=info.compress_type
+              ni.external_attr=info.external_attr
+              ni.internal_attr=info.internal_attr
+              ni.create_system=info.create_system
+              ni.extra=info.extra
+              ni.comment=info.comment
               zout.writestr(ni,data)
             for name,path in updates.items():
-              if name not in seen: zout.write(path,name,compress_type=zipfile.ZIP_DEFLATED)
+              if name not in seen:
+                zout.write(path,name,compress_type=zipfile.ZIP_DEFLATED)
           shutil.move(tmp,src)
           PY
 
