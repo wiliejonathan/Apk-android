@@ -1,0 +1,88 @@
+name: Publish Android production release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'release-staging/REV372-production/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Load release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          source release-staging/REV372-production/release.env
+          {
+            echo "TAG=$TAG"
+            echo "TITLE=$TITLE"
+            echo "ASSET=$ASSET"
+            echo "BASE_TAG=$BASE_TAG"
+            echo "BASE_ASSET=$BASE_ASSET"
+            echo "APK_SHA256=$APK_SHA256"
+            echo "SIGNER_SHA256=$SIGNER_SHA256"
+          } >> "$GITHUB_ENV"
+
+      - name: Ensure zstd is available
+        shell: bash
+        run: |
+          if ! command -v zstd >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y zstd
+          fi
+
+      - name: Reconstruct signed production APK from stable base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tf-rev372/base
+          gh release download "$BASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$BASE_ASSET" \
+            --dir /tmp/tf-rev372/base
+          base64 -d release-staging/REV372-production/rev352_to_rev372.zst.b64 > /tmp/tf-rev372/rev352_to_rev372.zst
+          zstd -q -d \
+            --patch-from="/tmp/tf-rev372/base/$BASE_ASSET" \
+            /tmp/tf-rev372/rev352_to_rev372.zst \
+            -o "/tmp/tf-rev372/$ASSET"
+          echo "$APK_SHA256  /tmp/tf-rev372/$ASSET" | sha256sum -c -
+          jarsigner -verify "/tmp/tf-rev372/$ASSET" >/dev/null
+          keytool -printcert -jarfile "/tmp/tf-rev372/$ASSET" > /tmp/tf-rev372/cert.txt
+          grep -F "SHA256: $SIGNER_SHA256" /tmp/tf-rev372/cert.txt
+
+      - name: Publish stable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTES=release-staging/REV372-production/RELEASE_NOTES.md
+          APK="/tmp/tf-rev372/$ASSET"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --notes-file "$NOTES" \
+              --latest
+            gh release upload "$TAG" "$APK" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target main \
+              --title "$TITLE" \
+              --notes-file "$NOTES" \
+              --latest
+          fi
