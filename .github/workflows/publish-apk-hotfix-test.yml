@@ -7,6 +7,7 @@ on:
       - 'release-staging/**/READY'
       - '!release-staging/REV381-apk-only/**'
       - '!release-staging/REV381-signing-ready/**'
+      - '!release-staging/REV382-apk-only/**'
 
 permissions:
   contents: write
