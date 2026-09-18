@@ -1,0 +1,49 @@
+name: Publish Android REV381 signing-ready assets
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV381-signing-ready/READY'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch final Mobile REV381 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/rev381 && mkdir -p /tmp/rev381/src /tmp/rev381/pkg/assets/www
+          gh release download v1.16.94             --repo wiliejonathan/tf-analyzer-analyst-ios             --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV381_PC379_CALC_PARITY.zip'             --output /tmp/rev381/mobile.zip
+          echo '3220ed227f5219e60d6978e54ee748fdb96d32e5dd13a19f8873bff69b52cbdd  /tmp/rev381/mobile.zip' | sha256sum -c -
+          unzip -q /tmp/rev381/mobile.zip -d /tmp/rev381/src
+          cp -a /tmp/rev381/src/. /tmp/rev381/pkg/assets/www/
+          cat > /tmp/rev381/pkg/README_ANDROID_REV381_SIGNING_READY.txt <<'EOF'
+          TF Analyzer Analyst Android REV381 - Signing Ready
+          ===================================================
+          Source of truth PC: REV379 / v1.16.92 (UNCHANGED).
+          Mobile parity source: iOS/Browser REV381 / v1.16.94.
+          Replace the Android wrapper's assets/www with this package, then build
+          with the ORIGINAL REV330+ production/update keystore.
+          Do NOT sign with a new key if the APK must update the installed app.
+          EOF
+          cd /tmp/rev381/pkg
+          zip -qr /tmp/TF_Analyzer_Android_REV381_PC379_CALC_PARITY_SIGNING_READY.zip .
+          sha256sum /tmp/TF_Analyzer_Android_REV381_PC379_CALC_PARITY_SIGNING_READY.zip > /tmp/TF_Analyzer_Android_REV381_PC379_CALC_PARITY_SIGNING_READY.zip.sha256
+      - name: Publish prerelease asset package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v1.16.94-assets
+          TITLE='TF Analyzer Analyst Android REV381 - Production Signing Ready'
+          NOTES=release-staging/REV381-signing-ready/RELEASE_NOTES.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES" --prerelease
+            gh release upload "$TAG"               /tmp/TF_Analyzer_Android_REV381_PC379_CALC_PARITY_SIGNING_READY.zip               /tmp/TF_Analyzer_Android_REV381_PC379_CALC_PARITY_SIGNING_READY.zip.sha256               --clobber
+          else
+            gh release create "$TAG"               /tmp/TF_Analyzer_Android_REV381_PC379_CALC_PARITY_SIGNING_READY.zip               /tmp/TF_Analyzer_Android_REV381_PC379_CALC_PARITY_SIGNING_READY.zip.sha256               --target main --title "$TITLE" --notes-file "$NOTES" --prerelease
+          fi
