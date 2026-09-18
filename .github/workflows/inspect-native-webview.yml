@@ -1,0 +1,23 @@
+name: Inspect Android native WebView target
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'audit/inspect-native-webview/READY'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect classes.dex URLs and WebView load targets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/native
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --output /tmp/native/app.apk
+          unzip -p /tmp/native/app.apk classes.dex > /tmp/native/classes.dex
+          echo '--- URL / WebView strings ---'
+          strings -a /tmp/native/classes.dex | grep -Ei 'loadUrl|android_asset|appassets|github\.io|tf-analyzer|https?://|WebViewAssetLoader|index\.html' | sort -u | head -n 300 || true
