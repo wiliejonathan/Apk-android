@@ -1,0 +1,149 @@
+name: Publish Android REV382 APK only
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV382-apk-only/READY'
+permissions:
+  contents: write
+concurrency:
+  group: publish-android-rev382
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build REV382 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev382-apk
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/base" "$ROOT/mobile"
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --dir "$ROOT/base"
+          gh release download v1.16.95 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV382_JSON_IMPORT_TABLE_FIX.zip' --output "$ROOT/mobile.zip"
+          echo 'fb8aefce4e841567e9bba86a0985c0683f0a2263c686dc0b84db32fd85a853e0  '"$ROOT"'/mobile.zip' | sha256sum -c -
+          unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, zipfile
+          root=Path('/tmp/tf-rev382-apk')
+          src=root/'base'/'TF.Analyzer.Analyst.V1.16.69_REV372.apk'
+          out=root/'TF.Analyzer.Analyst.V1.16.95_REV382_JSON_IMPORT_TABLE_FIX.apk'
+          mobile=root/'mobile'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'):
+                  continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')):
+                  continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.16.69'.encode('utf-16le'); new='1.16.95'.encode('utf-16le')
+          assert data.count(old)==1
+          data=data.replace(old,new,1)
+          code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
+          pos=data.find(code110)
+          assert pos>=0 and data.find(code110,pos+1)<0
+          data[pos+4:pos+8]=(112).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in mobile.rglob('*'):
+              if p.is_file():
+                  updates['assets/www/'+p.relative_to(mobile).as_posix()]=p.read_bytes()
+          fu='assets/www/mobile-force-update.js'
+          s=updates[fu].decode('utf-8')
+          s,n=re.subn(r"var CURRENT_TAG = '[^']+';","var CURRENT_TAG = 'v1.16.95';",s,count=1)
+          assert n==1
+          updates[fu]=s.encode()
+          sw='assets/www/service-worker.js'
+          s=updates[sw].decode('utf-8')
+          lines=s.splitlines()
+          assert lines and lines[0].startswith('const CACHE=')
+          lines[0]="const CACHE='tf-analyzer-analyst-android-rev382-json-import-fix';"
+          updates[sw]=('\n'.join(lines)+'\n').encode()
+          updates['assets/www/README_ANDROID_REV382.txt']=(
+              'TF Analyzer Analyst Android REV382\nVersion: v1.16.95\nVersion Code: 112\n'
+              'PC source of truth: REV379 / v1.16.92 (unchanged)\n'
+              'Fix: official PC JSON manual import preserves canonical history and tables.\n'
+          ).encode()
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type
+                  ni.external_attr=info.external_attr
+                  ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system
+                  ni.extra=info.extra
+                  ni.comment=info.comment
+                  ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,19,0,45,0))
+                  ni.compress_type=zipfile.ZIP_DEFLATED
+                  ni.create_system=3
+                  ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev382.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev382 -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV382, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev382.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.16.95_REV382_JSON_IMPORT_TABLE_FIX.apk" tfanalyzer-rev382
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.16.95_REV382_JSON_IMPORT_TABLE_FIX.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.16.95_REV382_JSON_IMPORT_TABLE_FIX.apk"
+
+          python3 - <<'PY'
+          import re, zipfile
+          apk='/tmp/tf-rev382-apk/TF.Analyzer.Analyst.V1.16.95_REV382_JSON_IMPORT_TABLE_FIX.apk'
+          with zipfile.ZipFile(apk) as z:
+              bridge=z.read('assets/www/mobile-data-bridge.js').decode('utf-8')
+              index=z.read('assets/www/index.html').decode('utf-8')
+              gate=z.read('assets/www/mobile-license-gate.js').decode('utf-8')
+              updater=z.read('assets/www/mobile-force-update.js').decode('utf-8')
+          marker='const payload=payloads.length>1?combine(payloads,fileNames):payloads[0];'
+          p=bridge.index(marker)
+          q=bridge.index('await applyPayload(payload,fileNames);',p)
+          block=bridge[p:q]
+          assert 'REV382 IMPORT FIX' in block
+          assert '{canonicalPc:hasOfficialPcEnvelope}' in block
+          assert 'canonicalPc&&Array.isArray(st.tfHistorySignals)' in bridge
+          assert '?rev=382' in index and '?rev=381' not in index
+          assert '?rev=382' in gate and '?rev=381' not in gate
+          assert "var CURRENT_TAG = 'v1.16.95';" in updater
+          print('REV382 APK embedded JSON-import QA: PASS')
+          PY
+
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.16.95_REV382_JSON_IMPORT_TABLE_FIX.apk" | tee "$ROOT/apk.sha256.txt"
+
+      - name: Publish APK-only final release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=v1.16.95-android
+          APK=/tmp/tf-rev382-apk/TF.Analyzer.Analyst.V1.16.95_REV382_JSON_IMPORT_TABLE_FIX.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.16.95 - REV382' --notes-file release-staging/REV382-apk-only/RELEASE_NOTES.md --latest --prerelease=false
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.16.95 - REV382' --notes-file release-staging/REV382-apk-only/RELEASE_NOTES.md --latest
+          fi
+          COUNT=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets | length')
+          test "$COUNT" = "1"
+          NAME=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[0].name')
+          case "$NAME" in *.apk) ;; *) echo "Unexpected release asset: $NAME"; exit 1;; esac
