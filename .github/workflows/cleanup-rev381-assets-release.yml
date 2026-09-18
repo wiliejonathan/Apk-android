@@ -1,0 +1,21 @@
+name: Cleanup obsolete REV381 signing-ready release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV381-apk-only/CLEANUP'
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove obsolete ZIP release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v1.16.94-assets --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete v1.16.94-assets --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
