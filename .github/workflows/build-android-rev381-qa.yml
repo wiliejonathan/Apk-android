@@ -1,0 +1,202 @@
+name: Build Android REV381 fresh-install QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-rev381-test/READY'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Prepare production base and exact Mobile REV381 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/rev381-android
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+          gh release download v1.16.69             --repo "$GITHUB_REPOSITORY"             --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk'             --output "$ROOT/base.apk"
+          echo '3f2027a1118591d75535b0f99265f4ae18b2fcab18462c9cd370ca606c03a306  '"$ROOT/base.apk" | sha256sum -c -
+
+          git clone -q https://github.com/wiliejonathan/tf-analyzer-analyst-ios.git "$ROOT/mobile"
+          git -C "$ROOT/mobile" checkout -q e151d64156e2026c15f7c4b2fba66d5bb18d4a7e
+
+      - name: Rebuild embedded Mobile bundle
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/rev381-android
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile, shutil
+
+          root=Path('/tmp/rev381-android')
+          src=root/'base.apk'
+          mobile=root/'mobile'
+          out=root/'TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk'
+
+          mapping={
+            'assets/www/assets/dashboard-mobile.js': mobile/'assets/dashboard-mobile.js',
+            'assets/www/assets/dashboard-original.css': mobile/'assets/dashboard-original.css',
+            'assets/www/index.html': mobile/'index.html',
+            'assets/www/manifest.webmanifest': mobile/'manifest.webmanifest',
+            'assets/www/mobile-app-shell.js': mobile/'mobile-app-shell.js',
+            'assets/www/mobile-remote.js': mobile/'mobile-remote.js',
+            'assets/www/mobile-remote.css': mobile/'mobile-remote.css',
+            'assets/www/mobile-chrome-shim.js': mobile/'mobile-chrome-shim.js',
+            'assets/www/mobile-data-bridge.js': mobile/'mobile-data-bridge.js',
+            'assets/www/mobile-force-update.js': mobile/'mobile-force-update.js',
+            'assets/www/mobile-license-gate.js': mobile/'mobile-license-gate.js',
+            'assets/www/mobile-import-fix-v30.js': mobile/'mobile-import-fix-v30.js',
+            'assets/www/mobile-overrides.css': mobile/'mobile-overrides.css',
+            'assets/www/icon32.png': mobile/'icon32.png',
+            'assets/www/icons/icon-180.png': mobile/'icons/icon-180.png',
+            'assets/www/icons/icon-192.png': mobile/'icons/icon-192.png',
+            'assets/www/icons/icon-512.png': mobile/'icons/icon-512.png',
+          }
+          for dst,p in mapping.items():
+              assert p.exists(), (dst,p)
+
+          with zipfile.ZipFile(src,'r') as zin:
+              infos=zin.infolist()
+              files={i.filename:zin.read(i.filename) for i in infos}
+
+          # versionName 1.16.69 -> 1.16.94; versionCode 110 -> 111.
+          manifest=bytearray(files['AndroidManifest.xml'])
+          old='1.16.69'.encode('utf-16le')
+          new='1.16.94'.encode('utf-16le')
+          assert manifest.count(old)==1
+          manifest=manifest.replace(old,new,1)
+          code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
+          pos=manifest.find(code110)
+          assert pos>=0 and manifest.find(code110,pos+1)<0
+          manifest[pos+4:pos+8]=(111).to_bytes(4,'little')
+          files['AndroidManifest.xml']=bytes(manifest)
+
+          for dst,p in mapping.items():
+              data=p.read_bytes()
+              if dst.endswith('mobile-force-update.js'):
+                  text=data.decode('utf-8')
+                  import re
+                  text,n=re.subn(r"var CURRENT_TAG = 'v[0-9]+\.[0-9]+\.[0-9]+';",
+                                 "var CURRENT_TAG = 'v1.16.94';",text,count=1)
+                  assert n==1
+                  data=text.encode('utf-8')
+              files[dst]=data
+
+          readme=(
+            'TF Analyzer Analyst Android REV381 fresh-install QA\n'
+            'Version: v1.16.94\n'
+            'Version Code: 111\n'
+            'Mobile source commit: e151d64156e2026c15f7c4b2fba66d5bb18d4a7e\n'
+            'PC source-of-truth remains REV379 v1.16.92 and is not modified.\n'
+            'This QA APK uses a temporary test signer because the production private keystore is not present in the connected repositories/files.\n'
+          ).encode()
+          files['assets/www/README_REV381_QA.txt']=readme
+
+          with zipfile.ZipFile(out,'w') as zout:
+              seen=set()
+              for info in infos:
+                  name=info.filename
+                  upper=name.upper()
+                  if upper.startswith('META-INF/') and (upper.endswith('.RSA') or upper.endswith('.SF') or upper.endswith('MANIFEST.MF')):
+                      continue
+                  seen.add(name)
+                  data=files[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type
+                  ni.external_attr=info.external_attr
+                  ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system
+                  ni.extra=info.extra
+                  ni.comment=info.comment
+                  ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,data)
+              for name in mapping:
+                  if name not in seen:
+                      zout.writestr(name,files[name],compress_type=zipfile.ZIP_DEFLATED)
+              zout.writestr('assets/www/README_REV381_QA.txt',readme,compress_type=zipfile.ZIP_DEFLATED)
+
+          print(out)
+          PY
+
+      - name: Sign QA APK and verify
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/rev381-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk"
+          PASS='TFAnalyzerRev381Qa2026'
+          keytool -genkeypair             -keystore "$ROOT/rev381-qa.jks"             -storepass "$PASS" -keypass "$PASS"             -alias tfanalyzer-rev381-qa             -keyalg RSA -keysize 3072 -validity 10000             -dname 'CN=TF Analyzer Analyst REV381 QA, OU=Development, O=Skill Fusion, L=Pontianak, ST=West Kalimantan, C=ID'
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)
+          "$APKSIGNER" sign             --ks "$ROOT/rev381-qa.jks"             --ks-pass "pass:$PASS"             --key-pass "pass:$PASS"             --v1-signing-enabled true             --v2-signing-enabled true             "$APK"
+
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$ROOT/apksigner.txt"
+          unzip -tq "$APK"
+
+      - name: Verify embedded REV381 calculation bridge and source bytes
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/rev381-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk"
+
+          unzip -p "$APK" assets/www/mobile-data-bridge.js > "$ROOT/bridge.js"
+          unzip -p "$APK" assets/www/assets/dashboard-mobile.js > "$ROOT/dashboard.js"
+          unzip -p "$APK" assets/www/mobile-license-gate.js > "$ROOT/gate.js"
+
+          cmp "$ROOT/dashboard.js" "$ROOT/mobile/assets/dashboard-mobile.js"
+          grep -F 'canonicalPc&&Array.isArray(st.tfHistorySignals)' "$ROOT/bridge.js"
+          grep -F 'clone(st.tfHistorySignals,st.tfHistorySignals.slice())' "$ROOT/bridge.js"
+          grep -F 'const keys=["entry","takeProfit","stopLoss","type","createdDate","displayDate","signalId","expiredDate"];' "$ROOT/bridge.js"
+          grep -F 'assets/dashboard-mobile.js?rev=381' "$ROOT/gate.js"
+          grep -F 'mobile-data-bridge.js?rev=381' "$ROOT/gate.js"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/rev381-android/bridge.js').read_text()
+          assert 'payload.schema===SCHEMA' in p
+          assert 'canonicalPc:hasOfficialPcEnvelope' in p
+          print('REV381 canonical PC data preservation: PASS')
+          PY
+
+          sha256sum "$APK" | tee "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk.sha256"
+
+      - name: Publish prerelease and workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TF-Analyzer-Analyst-Android-REV381-QA
+          path: |
+            /tmp/rev381-android/TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk
+            /tmp/rev381-android/TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk.sha256
+            /tmp/rev381-android/apksigner.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/rev381-android
+          TAG='v1.16.94-rev381-qa'
+          APK="$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk"
+          SHA="$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_FRESH_INSTALL_QA.apk.sha256"
+          NOTES='android-rev381-test/RELEASE_NOTES.md'
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title 'TF Analyzer Analyst v1.16.94 REV381 QA' --notes-file "$NOTES" --prerelease
+            gh release upload "$TAG" "$APK" "$SHA" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" "$SHA"               --repo "$GITHUB_REPOSITORY" --target main               --title 'TF Analyzer Analyst v1.16.94 REV381 QA'               --notes-file "$NOTES" --prerelease
+          fi
