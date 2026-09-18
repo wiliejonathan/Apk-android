@@ -20,7 +20,7 @@ jobs:
           gh release download v1.16.69 --repo wiliejonathan/Apk-android --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --output /tmp/apk381/app.apk
           unzip -p /tmp/apk381/app.apk META-INF/MANIFEST.MF > /tmp/apk381/MANIFEST.MF
           unzip -p /tmp/apk381/app.apk assets/www/mobile-data-bridge.js > /tmp/apk381/mobile-data-bridge.js
-          unzip -p /tmp/apk381/app.apk assets/www/dashboard-mobile.js > /tmp/apk381/dashboard-mobile.js
+          unzip -p /tmp/apk381/app.apk assets/www/assets/dashboard-mobile.js > /tmp/apk381/dashboard-mobile.js
           unzip -p /tmp/apk381/app.apk assets/www/mobile-force-update.js > /tmp/apk381/mobile-force-update.js
           python3 - <<'PY'
           from pathlib import Path
