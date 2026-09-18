@@ -1,0 +1,26 @@
+name: Verify APK signature schemes
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'audit/verify-signature-schemes/READY'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and inspect production APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/apksig
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --output /tmp/apksig/app.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)
+          test -x "$APKSIGNER"
+          echo "APKSIGNER=$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs /tmp/apksig/app.apk | tee /tmp/apksig/verify.txt
+          echo '--- JAR verify ---'
+          jarsigner -verify -verbose /tmp/apksig/app.apk | tail -n 60
