@@ -101,8 +101,16 @@ jobs:
           jarsigner -keystore "$ROOT/rev381.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" tfanalyzer-rev381
           jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" >/dev/null
           unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk"
-          unzip -p "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" assets/www/mobile-data-bridge.js | grep -F "const hasCanonicalPcHistory=Array.isArray(st.tfHistorySignals);"
-          unzip -p "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" assets/www/mobile-force-update.js | grep -F "var CURRENT_TAG = 'v1.16.94';"
+          python3 - <<'PY'
+          import re, zipfile
+          apk='/tmp/tf-rev381-apk/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk'
+          with zipfile.ZipFile(apk) as z:
+              bridge=z.read('assets/www/mobile-data-bridge.js').decode('utf-8')
+              updater=z.read('assets/www/mobile-force-update.js').decode('utf-8')
+          assert re.search(r'hasCanonicalPcHistory\s*=\s*canonicalPc\s*&&\s*Array\.isArray\(st\.tfHistorySignals\)',bridge)
+          assert "var CURRENT_TAG = 'v1.16.94';" in updater
+          print('REV381 APK embedded Mobile parity QA: PASS')
+          PY
 
       - name: Publish APK-only prerelease
         env:
