@@ -1,0 +1,119 @@
+name: Publish Android REV381 APK only
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV381-apk-only/READY'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build REV381 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev381-apk
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/base" "$ROOT/mobile"
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --dir "$ROOT/base"
+          gh release download v1.16.94 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV381_PC379_CALC_PARITY.zip' --output "$ROOT/mobile.zip"
+          echo '3220ed227f5219e60d6978e54ee748fdb96d32e5dd13a19f8873bff69b52cbdd  '"$ROOT"'/mobile.zip' | sha256sum -c -
+          unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, zipfile
+          root=Path('/tmp/tf-rev381-apk')
+          src=root/'base'/'TF.Analyzer.Analyst.V1.16.69_REV372.apk'
+          out=root/'TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk'
+          mobile=root/'mobile'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'):
+                  continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')):
+                  continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.16.69'.encode('utf-16le'); new='1.16.94'.encode('utf-16le')
+          assert data.count(old)==1
+          data=data.replace(old,new,1)
+          code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
+          pos=data.find(code110)
+          assert pos>=0 and data.find(code110,pos+1)<0
+          data[pos+4:pos+8]=(111).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in mobile.rglob('*'):
+              if p.is_file():
+                  updates['assets/www/'+p.relative_to(mobile).as_posix()]=p.read_bytes()
+          fu='assets/www/mobile-force-update.js'
+          s=updates[fu].decode('utf-8')
+          s,n=re.subn(r"var CURRENT_TAG = '[^']+';","var CURRENT_TAG = 'v1.16.94';",s,count=1)
+          assert n==1
+          updates[fu]=s.encode()
+          sw='assets/www/service-worker.js'
+          s=updates[sw].decode('utf-8')
+          lines=s.splitlines()
+          assert lines and lines[0].startswith('const CACHE=')
+          lines[0]="const CACHE='tf-analyzer-analyst-android-rev381-pc379-calc-parity';"
+          updates[sw]=('\n'.join(lines)+'\n').encode()
+          updates['assets/www/README_ANDROID_REV381.txt']=(
+              'TF Analyzer Analyst Android REV381\nVersion: v1.16.94\nVersion Code: 111\n'
+              'PC source of truth: REV379 / v1.16.92 (unchanged)\n'
+          ).encode()
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type
+                  ni.external_attr=info.external_attr
+                  ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system
+                  ni.extra=info.extra
+                  ni.comment=info.comment
+                  ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,18,23,45,0))
+                  ni.compress_type=zipfile.ZIP_DEFLATED
+                  ni.create_system=3
+                  ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev381.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev381 -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV381, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev381.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" tfanalyzer-rev381
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk"
+          unzip -p "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" assets/www/mobile-data-bridge.js | grep -F "const hasCanonicalPcHistory=Array.isArray(st.tfHistorySignals);"
+          unzip -p "$ROOT/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk" assets/www/mobile-force-update.js | grep -F "var CURRENT_TAG = 'v1.16.94';"
+
+      - name: Publish APK-only prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=v1.16.94-android
+          APK=/tmp/tf-rev381-apk/TF.Analyzer.Analyst.V1.16.94_REV381_PC379_CALC_PARITY.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target main --title 'TF Analyzer Analyst Android V1.16.94 - REV381' --notes-file release-staging/REV381-apk-only/RELEASE_NOTES.md --prerelease
+          fi
