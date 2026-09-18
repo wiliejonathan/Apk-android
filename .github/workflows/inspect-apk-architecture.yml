@@ -1,0 +1,51 @@
+name: Inspect production APK architecture
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'audit/inspect-apk-architecture/READY'
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect latest production APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/apk-inspect
+          mkdir -p /tmp/apk-inspect
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --output /tmp/apk-inspect/app.apk
+          unzip -l /tmp/apk-inspect/app.apk > /tmp/apk-inspect/files.txt
+          mkdir -p audit
+          {
+            echo '# Production APK architecture audit'
+            echo
+            echo '## Assets'
+            grep 'assets/www/' /tmp/apk-inspect/files.txt | head -n 300 || true
+            echo
+            echo '## index.html'
+            unzip -p /tmp/apk-inspect/app.apk assets/www/index.html | sed -n '1,260p'
+            echo
+            echo '## mobile-remote.js refs'
+            unzip -p /tmp/apk-inspect/app.apk assets/www/mobile-remote.js | grep -nE 'https?://|dashboard-mobile|mobile-data-bridge|tfMobileApplyRemotePayload|openMobileDashboardHome' | head -n 300 || true
+            echo
+            echo '## service-worker.js'
+            unzip -p /tmp/apk-inspect/app.apk assets/www/service-worker.js | sed -n '1,320p'
+            echo
+            echo '## AndroidManifest strings'
+            strings -el /tmp/apk-inspect/app.apk | grep -Ei 'http|tf-analyzer|github|versionName|versionCode' | head -n 200 || true
+            echo
+            echo '## signature verification'
+            jarsigner -verify -verbose -certs /tmp/apk-inspect/app.apk 2>&1 | tail -n 120 || true
+          } > audit/ANDROID_REV372_ARCHITECTURE.md
+      - name: Commit report
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add audit/ANDROID_REV372_ARCHITECTURE.md
+          git commit -m 'Audit production APK architecture' || exit 0
+          git push origin HEAD:main
