@@ -1,0 +1,70 @@
+name: Audit Android production parity and signature coverage
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV381-audit/READY'
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download production APK and audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/apk381 && mkdir -p /tmp/apk381
+          gh release download v1.16.69 --repo wiliejonathan/Apk-android --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --output /tmp/apk381/app.apk
+          unzip -p /tmp/apk381/app.apk META-INF/MANIFEST.MF > /tmp/apk381/MANIFEST.MF
+          unzip -p /tmp/apk381/app.apk assets/www/mobile-data-bridge.js > /tmp/apk381/mobile-data-bridge.js
+          unzip -p /tmp/apk381/app.apk assets/www/dashboard-mobile.js > /tmp/apk381/dashboard-mobile.js
+          unzip -p /tmp/apk381/app.apk assets/www/mobile-force-update.js > /tmp/apk381/mobile-force-update.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,re
+          mf=Path('/tmp/apk381/MANIFEST.MF').read_text(errors='ignore')
+          bridge=Path('/tmp/apk381/mobile-data-bridge.js').read_text(errors='ignore')
+          dash=Path('/tmp/apk381/dashboard-mobile.js').read_text(errors='ignore')
+          upd=Path('/tmp/apk381/mobile-force-update.js').read_text(errors='ignore')
+          def covered(name):
+              return ('Name: '+name+'\n') in mf or ('Name: '+name+'\r\n') in mf
+          report=[
+            '# Android REV372 Production Audit','',
+            '- APK SHA256: '+hashlib.sha256(Path('/tmp/apk381/app.apk').read_bytes()).hexdigest(),
+            '- mobile-data-bridge signed in JAR manifest: '+str(covered('assets/www/mobile-data-bridge.js')),
+            '- dashboard-mobile signed in JAR manifest: '+str(covered('assets/www/dashboard-mobile.js')),
+            '- force updater signed in JAR manifest: '+str(covered('assets/www/mobile-force-update.js')),
+            '- bridge bytes: '+str(len(bridge)),
+            '- dashboard bytes: '+str(len(dash)),
+            '',
+            '## Bridge behavior',
+            '- canonical-history preserve patch present: '+str('hasCanonicalPcHistory' in bridge),
+            '- mobile history normalizer present: '+str('tfMobileNormalizeHistoryV31' in bridge),
+            '- old filter path present: '+str('.filter(it=>' in bridge or '.filter((it)' in bridge),
+            '',
+            '## Price behavior',
+            '- price cache key present: '+str('tfMyfxbookPrices' in dash),
+            '- mobile no-live-price comment present: '+str('MOBILE: no live-price refresh workflow' in dash),
+            '- static fallback map present: '+str('USDJPY: 6.5' in dash and 'USDCAD: 7.2' in dash and 'USDCHF: 12.5' in dash),
+            '',
+            '## Force update',
+            '~~~js',upd[:5000],'~~~',
+            '',
+            '## Signature coverage excerpts'
+          ]
+          for name in ['assets/www/mobile-data-bridge.js','assets/www/dashboard-mobile.js','assets/www/mobile-force-update.js']:
+              pos=mf.find('Name: '+name)
+              report += ['', '### '+name, '~~~text', mf[pos:pos+500] if pos>=0 else 'NOT LISTED', '~~~']
+          Path('audit').mkdir(exist_ok=True)
+          Path('audit/ANDROID_REV372_PRODUCTION_PARITY.md').write_text('\n'.join(report),encoding='utf-8')
+          PY
+      - name: Commit audit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add audit/ANDROID_REV372_PRODUCTION_PARITY.md
+          git commit -m 'Audit Android production calculation parity and signature coverage' || exit 0
+          git push origin HEAD:main
