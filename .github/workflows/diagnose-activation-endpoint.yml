@@ -1,0 +1,40 @@
+name: Diagnose activation endpoint
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'audit/activation-endpoint/READY'
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe activation API
+        run: |
+          set -euo pipefail
+          URL='https://tf-license-device-api.wiliejonathan1999.workers.dev'
+          echo '=== DNS/TLS/GET ==='
+          curl -sS -D /tmp/get.headers -o /tmp/get.body --connect-timeout 10 --max-time 20 "$URL/" || true
+          cat /tmp/get.headers || true
+          head -c 1000 /tmp/get.body || true
+          echo
+          echo '=== OPTIONS /mobile/login ==='
+          curl -sS -D /tmp/options.headers -o /tmp/options.body -X OPTIONS --connect-timeout 10 --max-time 20 \
+            -H 'Origin: https://example.com' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type' \
+            "$URL/mobile/login" || true
+          cat /tmp/options.headers || true
+          head -c 1000 /tmp/options.body || true
+          echo
+          echo '=== POST /mobile/login dummy ==='
+          START=$(date +%s%3N)
+          CODE=$(curl -sS -o /tmp/post.body -w '%{http_code}' -X POST --connect-timeout 10 --max-time 25 \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: https://example.com' \
+            --data '{"email":"diagnostic@example.invalid","token":"INVALID-DIAGNOSTIC","deviceType":"MOBILE","clientType":"MOBILE","mobilePlatform":"GitHub Diagnostic","mobileVersion":"1.17.01","remoteRevision":"REV388","requestNonce":"diagnostic"}' \
+            "$URL/mobile/login" || true)
+          END=$(date +%s%3N)
+          echo "HTTP=$CODE elapsed_ms=$((END-START))"
+          cat /tmp/post.body || true
