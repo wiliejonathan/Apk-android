@@ -1,0 +1,1 @@
+REV408: responsive JSON import, one normalization pass, rendering yields between tables, preserve status spans and avoid layout observer self-triggering. APK embeds the tested iOS/browser REV408 source. Fresh install build; export data before uninstalling an older differently signed build.
