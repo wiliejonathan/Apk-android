@@ -95,7 +95,7 @@ jobs:
           assert "vertical-align:middle;" in css
           assert "top:-0.5px;" in css
           assert '#history-table tbody tr.tf-history-row-pnl-positive > td:not([data-history-col="analyst"]) *' in css
-          assert '?rev=398' in idx
+          assert '?rev=399' in idx
           assert 'REV397 HARD FALLBACK' in dash
           assert 'function tf_applyLatestRiskColorOnly' in dash
           assert 'function tf_colorEveryRenderedAnalystName' in dash
