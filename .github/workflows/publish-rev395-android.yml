@@ -79,7 +79,7 @@ jobs:
           assert "lookup(d.path||'/mobile/login'" in proxy
           assert "remoteRevision:'REV395'" in proxy
           assert "var CURRENT_TAG = 'v1.17.08';" in upd
-          assert '?rev=394' in idx
+          assert '?rev=395' in idx
           print('REV395 Android all-analyst-name QA PASS')
           PY
       - name: Build production-signing-ready package
