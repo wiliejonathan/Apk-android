@@ -8,6 +8,10 @@ on:
       - '!release-staging/REV381-apk-only/**'
       - '!release-staging/REV381-signing-ready/**'
       - '!release-staging/REV382-apk-only/**'
+      - '!release-staging/REV394-apk/**'
+      - '!release-staging/REV394-signing-ready/**'
+      - '!release-staging/REV395-apk/**'
+      - '!release-staging/REV395-signing-ready/**'
 
 permissions:
   contents: write
