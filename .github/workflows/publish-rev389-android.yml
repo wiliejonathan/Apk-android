@@ -1,0 +1,230 @@
+name: Publish Android REV389 Activation Retry
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV389-apk/READY'
+permissions:
+  contents: write
+concurrency:
+  group: publish-android-rev389
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch REV388 Android signing-ready source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev389-android
+          rm -rf "$ROOT" && mkdir -p "$ROOT/src" "$ROOT/base" "$ROOT/signing-ready"
+          gh release download v1.17.01-assets --repo "$GITHUB_REPOSITORY" --pattern 'TF_Analyzer_Android_REV388_V1.17.01_PRODUCTION_SIGNING_READY.zip' --output "$ROOT/base-source.zip"
+          unzip -tq "$ROOT/base-source.zip"
+          unzip -q "$ROOT/base-source.zip" -d "$ROOT/src"
+          test -f "$ROOT/src/assets/www/mobile-license-gate.js"
+      - name: Patch activation retry and bump REV389
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/tf-rev389-android/src/assets/www')
+          gate=root/'mobile-license-gate.js'
+          s=gate.read_text()
+          old="      const result = await api('/mobile/login', { email, token });"
+          new="""      let result;
+      try {
+        // REV389 Android: valid-license lookups can take longer than an invalid-token lookup
+        // because the activation server may need device/session storage checks.
+        result = await api('/mobile/login', { email, token }, 30000);
+      } catch (firstError) {
+        const transient = firstError && (firstError.name === 'AbortError' || firstError.name === 'TypeError');
+        if (!transient) throw firstError;
+        setStatus('Koneksi server aktivasi lambat. Mencoba ulang…');
+        await new Promise(resolve => setTimeout(resolve, 700));
+        result = await api('/mobile/login', { email, token }, 45000);
+      }"""
+          assert old in s, 'login API call anchor not found'
+          s=s.replace(old,new,1)
+          oldcatch="      setStatus(error && error.name === 'AbortError' ? 'Server aktivasi timeout.' : (error.message || String(error)), 'error');"
+          newcatch="""      const msg = error && error.name === 'AbortError'
+        ? 'Server aktivasi belum merespons setelah percobaan ulang. Periksa koneksi internet lalu coba lagi.'
+        : (error && error.name === 'TypeError'
+          ? 'Koneksi ke server aktivasi gagal. Periksa internet/VPN/DNS lalu coba lagi.'
+          : (error.message || String(error)));
+      setStatus(msg, 'error');"""
+          assert oldcatch in s, 'login catch anchor not found'
+          s=s.replace(oldcatch,newcatch,1)
+          s=s.replace("mobileVersion: '1.0.110'","mobileVersion: '1.17.02'",1)
+          s=s.replace("remoteRevision: 'REV368'","remoteRevision: 'REV389'",1)
+          gate.write_text(s)
+          for name in ['index.html','service-worker.js','mobile-license-gate.js']:
+              p=root/name
+              x=p.read_text().replace('rev=388','rev=389').replace('rev388','rev389').replace('REV388','REV389')
+              if name=='service-worker.js':
+                  lines=x.splitlines()
+                  if lines and lines[0].startswith('const CACHE='):
+                      lines[0]="const CACHE='tf-analyzer-analyst-android-v159-rev389-activation-retry';"
+                      x='\n'.join(lines)+'\n'
+              p.write_text(x)
+          upd=root/'mobile-force-update.js'
+          u=upd.read_text()
+          assert "var CURRENT_TAG = 'v1.17.01';" in u
+          upd.write_text(u.replace("var CURRENT_TAG = 'v1.17.01';","var CURRENT_TAG = 'v1.17.02';",1))
+          (root/'README_ANDROID_REV389_SOURCE.txt').write_text(
+              'TF Analyzer Analyst Android REV389 / v1.17.02\n'
+              'Activation: 30s first attempt + one 45s retry for transient timeout/network errors.\n'
+              'REV388 Performance Holding placement retained.\n'
+          )
+          PY
+          node --check /tmp/tf-rev389-android/src/assets/www/mobile-license-gate.js
+          node --check /tmp/tf-rev389-android/src/assets/www/mobile-app-shell.js
+          node --check /tmp/tf-rev389-android/src/assets/www/assets/dashboard-mobile.js
+          node --check /tmp/tf-rev389-android/src/assets/www/mobile-force-update.js
+      - name: Validate activation behavior
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/tf-rev389-android/src/assets/www')
+          s=(root/'mobile-license-gate.js').read_text()
+          shell=(root/'mobile-app-shell.js').read_text()
+          dash=(root/'assets/dashboard-mobile.js').read_text()
+          idx=(root/'index.html').read_text()
+          upd=(root/'mobile-force-update.js').read_text()
+          assert "api('/mobile/login', { email, token }, 30000)" in s
+          assert "api('/mobile/login', { email, token }, 45000)" in s
+          assert "firstError.name === 'AbortError' || firstError.name === 'TypeError'" in s
+          assert "Koneksi server aktivasi lambat. Mencoba ulang" in s
+          assert "mobileVersion: '1.17.02'" in s
+          assert "remoteRevision: 'REV389'" in s
+          assert "const holding = q('tf-holding-period-section');" in shell
+          assert 'REV387: Max and Avg both use the exact active Table 3 filtered trade rows.' in dash
+          assert '?rev=389' in idx
+          assert "var CURRENT_TAG = 'v1.17.02';" in upd
+          print('REV389 activation + Performance Holding QA PASS')
+          PY
+      - name: Build production-signing-ready package
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev389-android
+          cp -a "$ROOT/src/." "$ROOT/signing-ready/"
+          printf '%s\n' 'TF Analyzer Analyst Android REV389 / v1.17.02 - Production Signing Ready' 'Activation timeout retry fix; REV388 Performance Holding retained.' > "$ROOT/signing-ready/README_ANDROID_REV389_SIGNING_READY.txt"
+          (cd "$ROOT/signing-ready" && zip -qr "$ROOT/TF_Analyzer_Android_REV389_V1.17.02_PRODUCTION_SIGNING_READY.zip" .)
+          sha256sum "$ROOT/TF_Analyzer_Android_REV389_V1.17.02_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV389_V1.17.02_PRODUCTION_SIGNING_READY.zip.sha256"
+      - name: Build fresh-install APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev389-android
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --dir "$ROOT/base"
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('/tmp/tf-rev389-android')
+          src=root/'base'/'TF.Analyzer.Analyst.V1.16.69_REV372.apk'
+          out=root/'TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk'
+          web=root/'src'/'assets'/'www'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'): continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')): continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.16.69'.encode('utf-16le')
+          new='1.17.02'.encode('utf-16le')
+          assert data.count(old)==1
+          data=data.replace(old,new,1)
+          code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
+          pos=data.find(code110)
+          assert pos>=0 and data.find(code110,pos+1)<0
+          data[pos+4:pos+8]=(119).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in web.rglob('*'):
+              if p.is_file():
+                  updates['assets/www/'+p.relative_to(web).as_posix()]=p.read_bytes()
+          updates['assets/www/README_ANDROID_REV389.txt']=b'TF Analyzer Analyst Android REV389\nVersion: v1.17.02\nVersion Code: 119\nActivation retry fix; Performance Holding retained.\n'
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type
+                  ni.external_attr=info.external_attr
+                  ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system
+                  ni.extra=info.extra
+                  ni.comment=info.comment
+                  ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,30,17,20,0))
+                  ni.compress_type=zipfile.ZIP_DEFLATED
+                  ni.create_system=3
+                  ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev389-fresh.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev389-fresh -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV389 Fresh Install, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev389-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk" tfanalyzer-rev389-fresh
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='/tmp/tf-rev389-android/TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk'
+          with zipfile.ZipFile(apk) as z:
+              gate=z.read('assets/www/mobile-license-gate.js').decode()
+              shell=z.read('assets/www/mobile-app-shell.js').decode()
+              dash=z.read('assets/www/assets/dashboard-mobile.js').decode()
+              upd=z.read('assets/www/mobile-force-update.js').decode()
+          assert "api('/mobile/login', { email, token }, 30000)" in gate
+          assert "api('/mobile/login', { email, token }, 45000)" in gate
+          assert "remoteRevision: 'REV389'" in gate
+          assert "const holding = q('tf-holding-period-section');" in shell
+          assert 'REV387: Max and Avg both use the exact active Table 3 filtered trade rows.' in dash
+          assert "var CURRENT_TAG = 'v1.17.02';" in upd
+          print('REV389 embedded APK QA PASS')
+          PY
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk.sha256"
+      - name: Publish signing-ready assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev389-android
+          TAG=v1.17.02-assets
+          ZIP="$ROOT/TF_Analyzer_Android_REV389_V1.17.02_PRODUCTION_SIGNING_READY.zip"
+          SHA="$ZIP.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV389 - Production Signing Ready' --notes-file release-staging/REV389-signing-ready/RELEASE_NOTES.md --prerelease
+            gh release upload "$TAG" "$ZIP" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV389 - Production Signing Ready' --notes-file release-staging/REV389-signing-ready/RELEASE_NOTES.md --prerelease
+          fi
+      - name: Publish fresh-install APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev389-android
+          TAG=v1.17.02-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.17.02_REV389_ACTIVATION_RETRY_FRESH_INSTALL.apk"
+          SHA="$APK.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.02 - REV389 Activation Retry' --notes-file release-staging/REV389-apk/RELEASE_NOTES.md --prerelease
+            gh release upload "$TAG" "$APK" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$APK" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.02 - REV389 Activation Retry' --notes-file release-staging/REV389-apk/RELEASE_NOTES.md --prerelease
+          fi
