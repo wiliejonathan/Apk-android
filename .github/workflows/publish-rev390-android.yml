@@ -192,7 +192,7 @@ jobs:
               clearTimeout(timeout);
             }
           }
-'''
+          '''
           s=s[:start]+replacement+s[end:]
           s=s.replace("mobileVersion: '1.17.02'","mobileVersion: '1.17.03'")
           s=s.replace("remoteRevision: 'REV389'","remoteRevision: 'REV390'")
