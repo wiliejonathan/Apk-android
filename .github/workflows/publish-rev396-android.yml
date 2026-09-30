@@ -43,6 +43,7 @@ jobs:
           proxy=(root/'activation-proxy.html').read_text()
           upd=(root/'mobile-force-update.js').read_text()
           idx=(root/'index.html').read_text()
+          css=(root/'assets/dashboard-original.css').read_text()
           assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
           assert 'REV392 HARD RANGE BOUNDARY' in dash
           assert 'tfTradeRangeStartMonthIdx = startIdx;' in dash
@@ -70,9 +71,8 @@ jobs:
           assert "tf_applyLatestRiskToElement(nameSpan, it.name, null, true, 'left');" in dash
           assert "tf_applyLatestRiskToElement(nameCell, a.baseName || a.name, null, false);" in dash
           assert "tf_applyLatestRiskToElement(span, analystName, a.pair || getPrimaryPairForAnalyst(a), true, 'left');" in dash
-          assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', null, false);" in dash
-          assert "tf_applyLatestRiskPairIconOnly(analystCell, row.analyst || '', row.pair || '', 'left');" in dash
-          assert "tf_applyLatestRiskToElement(a, name, null, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', row.pair || '', true, 'left');" in dash
+                    assert "tf_applyLatestRiskToElement(a, name, null, true, 'left');" in dash
           assert "tf_applyLatestRiskToElement(nameSpan, name, null, false);" in dash
           assert 'tf_applyLatestRiskToElement(analystLink, entry.baseName, null, false);' in dash
           assert 'LICENSE_ANDROID_RELAY_URL' in gate
@@ -86,6 +86,14 @@ jobs:
           assert "lookup(d.path||'/mobile/login'" in proxy
           assert "remoteRevision:'REV396'" in proxy
           assert "var CURRENT_TAG = 'v1.17.09';" in upd
+          assert "tf_applyLatestRiskToElement(nameCell, baseName, rowPair, true, 'left');" in dash
+          assert 'tf_table1WarnedAnalysts' not in dash
+          assert "parts.push(pad2(hours)+'h');" in dash
+          assert "nameCell.removeAttribute('title');" in dash
+          assert "display:inline-flex;" in css
+          assert "vertical-align:middle;" in css
+          assert "top:-0.5px;" in css
+          assert '#history-table tbody tr.tf-history-row-pnl-positive > td:not([data-history-col="analyst"]) *' in css
           assert '?rev=396' in idx
           print('REV396 Android analyst-color/Table3-PNL QA PASS')
           PY
@@ -162,12 +170,17 @@ jobs:
               dash=z.read('assets/www/assets/dashboard-mobile.js').decode()
               proxy=z.read('assets/www/activation-proxy.html').decode()
               upd=z.read('assets/www/mobile-force-update.js').decode()
+              css=z.read('assets/www/assets/dashboard-original.css').decode()
           assert 'androidRelayLicenseLookup' in gate
           assert "remoteRevision: 'REV396'" in gate
           assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
           assert 'REV393: Latest-month Drawdown / Consecutive Loss warning system' in dash
           assert 'TF_LICENSE_RELAY_LOOKUP' in proxy
           assert "var CURRENT_TAG = 'v1.17.09';" in upd
+          assert "tf_applyLatestRiskToElement(nameCell, baseName, rowPair, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', row.pair || '', true, 'left');" in dash
+          assert "parts.push(pad2(hours)+'h');" in dash
+          assert "display:inline-flex;" in css and "top:-0.5px;" in css
           print('REV396 embedded APK analyst-color/Table3-PNL QA PASS')
           PY
           sha256sum "$ROOT/TF.Analyzer.Analyst.V1.17.09_REV396_ANALYST_COLORS_TABLE3_PNL_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.17.09_REV396_ANALYST_COLORS_TABLE3_PNL_FRESH_INSTALL.apk.sha256"
