@@ -153,7 +153,7 @@ jobs:
           assert 'androidRelayLicenseLookup' in gate
           assert "remoteRevision: 'REV394'" in gate
           assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
-          assert 'REV394: Latest-month Drawdown / Consecutive Loss warning system' in dash
+          assert 'REV393: Latest-month Drawdown / Consecutive Loss warning system' in dash
           assert 'TF_LICENSE_RELAY_LOOKUP' in proxy
           assert "var CURRENT_TAG = 'v1.17.07';" in upd
           print('REV394 embedded APK layout QA PASS')
