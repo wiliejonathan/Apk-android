@@ -34,30 +34,12 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root=Path('/tmp/tf-rev388-android/mobile')
-
-          # Move the existing Holding Period section into the dedicated Performance screen.
           shell=root/'mobile-app-shell.js'
           s=shell.read_text()
-          old="""    // Preserve the exact REV224 performance DOM and all bound IDs.
-    section.appendChild(perf);
-
-    const host = q('tf-dashboard-main') || document.querySelector('.page') || document.body;"""
-          new="""    // Preserve the exact REV224 performance DOM and all bound IDs.
-    section.appendChild(perf);
-
-    // REV388 Android: move the single existing Holding Analytics DOM below Performance/Probability.
-    // Moving (not cloning) preserves every bound ID, renderer, timeframe filter, and stored state.
-    const holding = q('tf-holding-period-section');
-    if(holding){
-      holding.classList.add('tf-mobile-performance-holding-rev388');
-      section.appendChild(holding);
-    }
-
-    const host = q('tf-dashboard-main') || document.querySelector('.page') || document.body;"""
+          old="    // Preserve the exact REV224 performance DOM and all bound IDs.\n    section.appendChild(perf);\n\n    const host = q('tf-dashboard-main') || document.querySelector('.page') || document.body;"
+          new="    // Preserve the exact REV224 performance DOM and all bound IDs.\n    section.appendChild(perf);\n\n    // REV388 Android: move the single existing Holding Analytics DOM below Performance/Probability.\n    // Moving (not cloning) preserves every bound ID, renderer, timeframe filter, and stored state.\n    const holding = q('tf-holding-period-section');\n    if(holding){\n      holding.classList.add('tf-mobile-performance-holding-rev388');\n      section.appendChild(holding);\n    }\n\n    const host = q('tf-dashboard-main') || document.querySelector('.page') || document.body;"
           assert old in s, 'createPerformanceScreen anchor not found'
           shell.write_text(s.replace(old,new,1))
-
-          # Correct helper copy to REV387 timeframe-parity semantics.
           dash=root/'assets/dashboard-mobile.js'
           d=dash.read_text()
           old_note='<div class="tf-holding-note"><strong>Max</strong> = holding period terlama dari seluruh trade yang masih termasuk ticker/analis-pair aktif. <strong>Avg.</strong> = rata-rata holding period dalam filter aktif (Time Range / Time Range per Month / Filter Tanggal).</div>'
@@ -66,56 +48,34 @@ jobs:
           d=d.replace(old_note,new_note,1)
           assert 'REV387: Max and Avg both use the exact active Table 3 filtered trade rows.' in d
           dash.write_text(d)
-
-          # Performance-screen-only responsive polish.
           css=root/'mobile-overrides.css'
           cs=css.read_text()
-          cs += '''
-
-/* REV388 ANDROID ONLY — Holding Analytics under Performance/Probability */
-#tf-mobile-performance-screen #tf-holding-period-section{
-  width:100%!important;max-width:100%!important;min-width:0!important;
-  margin:14px 0 4px!important;box-sizing:border-box!important;overflow:visible!important;
-}
-#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-grid{
-  display:grid!important;grid-template-columns:1fr!important;gap:9px!important;width:100%!important;
-}
-#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-card{
-  width:100%!important;max-width:100%!important;min-width:0!important;overflow:visible!important;
-}
-#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-table{
-  width:100%!important;min-width:0!important;table-layout:fixed!important;
-}
-#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-head{
-  align-items:flex-start!important;flex-direction:column!important;gap:7px!important;
-}
-#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-formula{
-  width:100%!important;box-sizing:border-box!important;
-}
-'''
-          css.write_text(cs)
-
-          # Android-only cache/version bump.
+          css_lines=[
+              '',
+              '/* REV388 ANDROID ONLY — Holding Analytics under Performance/Probability */',
+              '#tf-mobile-performance-screen #tf-holding-period-section{width:100%!important;max-width:100%!important;min-width:0!important;margin:14px 0 4px!important;box-sizing:border-box!important;overflow:visible!important;}',
+              '#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-grid{display:grid!important;grid-template-columns:1fr!important;gap:9px!important;width:100%!important;}',
+              '#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-card{width:100%!important;max-width:100%!important;min-width:0!important;overflow:visible!important;}',
+              '#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-table{width:100%!important;min-width:0!important;table-layout:fixed!important;}',
+              '#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-head{align-items:flex-start!important;flex-direction:column!important;gap:7px!important;}',
+              '#tf-mobile-performance-screen #tf-holding-period-section .tf-holding-formula{width:100%!important;box-sizing:border-box!important;}',
+              ''
+          ]
+          css.write_text(cs+'\n'.join(css_lines))
           for name in ['index.html','service-worker.js','mobile-license-gate.js']:
-              p=root/name
-              x=p.read_text().replace('rev=387','rev=388').replace('rev387','rev388').replace('REV387','REV388')
+              q=root/name
+              x=q.read_text().replace('rev=387','rev=388').replace('rev387','rev388').replace('REV387','REV388')
               if name=='service-worker.js':
                   lines=x.splitlines()
                   if lines and lines[0].startswith('const CACHE='):
                       lines[0]="const CACHE='tf-analyzer-analyst-android-v158-rev388-performance-holding';"
                       x='\n'.join(lines)+'\n'
-              p.write_text(x)
-
+              q.write_text(x)
           upd=root/'mobile-force-update.js'
           u=upd.read_text()
           assert "var CURRENT_TAG = 'v1.17.00';" in u
           upd.write_text(u.replace("var CURRENT_TAG = 'v1.17.00';","var CURRENT_TAG = 'v1.17.01';",1))
-
-          (root/'README_ANDROID_REV388_SOURCE.txt').write_text(
-              'TF Analyzer Analyst Android REV388 / v1.17.01\n'
-              'Holding Analytics is moved into nav Performance below Performance/Probability Analis.\n'
-              'Holding = Closed At - Created At; Max and Avg follow active timeframe/date/analyst/pair filters.\n'
-          )
+          (root/'README_ANDROID_REV388_SOURCE.txt').write_text('TF Analyzer Analyst Android REV388 / v1.17.01\nHolding Analytics is moved into nav Performance below Performance/Probability Analis.\nHolding = Closed At - Created At; Max and Avg follow active timeframe/date/analyst/pair filters.\n')
           PY
           node --check "$ROOT/mobile/mobile-app-shell.js"
           node --check "$ROOT/mobile/assets/dashboard-mobile.js"
@@ -149,11 +109,7 @@ jobs:
           set -euo pipefail
           ROOT=/tmp/tf-rev388-android
           cp -a "$ROOT/mobile/." "$ROOT/signing-ready/assets/www/"
-          cat > "$ROOT/signing-ready/README_ANDROID_REV388_SIGNING_READY.txt" <<'EOF'
-          TF Analyzer Analyst Android REV388 / v1.17.01 - Production Signing Ready
-          Holding Analytics is under nav Performance, below Performance/Probability Analis.
-          Sign with the original production/update key for update-in-place.
-          EOF
+          printf '%s\n' 'TF Analyzer Analyst Android REV388 / v1.17.01 - Production Signing Ready' 'Holding Analytics is under nav Performance, below Performance/Probability Analis.' 'Sign with the original production/update key for update-in-place.' > "$ROOT/signing-ready/README_ANDROID_REV388_SIGNING_READY.txt"
           (cd "$ROOT/signing-ready" && zip -qr "$ROOT/TF_Analyzer_Android_REV388_V1.17.01_PRODUCTION_SIGNING_READY.zip" .)
           sha256sum "$ROOT/TF_Analyzer_Android_REV388_V1.17.01_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV388_V1.17.01_PRODUCTION_SIGNING_READY.zip.sha256"
       - name: Build fresh-install APK
@@ -180,7 +136,8 @@ jobs:
               if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')): continue
               keep[name]=blob
           data=bytearray(keep['AndroidManifest.xml'])
-          old='1.16.69'.encode('utf-16le'); new='1.17.01'.encode('utf-16le')
+          old='1.16.69'.encode('utf-16le')
+          new='1.17.01'.encode('utf-16le')
           assert data.count(old)==1
           data=data.replace(old,new,1)
           code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
@@ -189,21 +146,27 @@ jobs:
           data[pos+4:pos+8]=(118).to_bytes(4,'little')
           keep['AndroidManifest.xml']=bytes(data)
           updates={}
-          for p in mobile.rglob('*'):
-              if p.is_file(): updates['assets/www/'+p.relative_to(mobile).as_posix()]=p.read_bytes()
-          updates['assets/www/README_ANDROID_REV388.txt']=(
-              'TF Analyzer Analyst Android REV388\nVersion: v1.17.01\nVersion Code: 118\n'
-              'Holding Analytics moved to Performance screen below Performance/Probability Analis.\n'
-          ).encode()
+          for q in mobile.rglob('*'):
+              if q.is_file():
+                  updates['assets/www/'+q.relative_to(mobile).as_posix()]=q.read_bytes()
+          updates['assets/www/README_ANDROID_REV388.txt']=b'TF Analyzer Analyst Android REV388\nVersion: v1.17.01\nVersion Code: 118\nHolding Analytics moved to Performance screen below Performance/Probability Analis.\n'
           with zipfile.ZipFile(out,'w') as zout:
               for name,blob in keep.items():
                   info=infos[name]
                   ni=zipfile.ZipInfo(name,info.date_time)
-                  ni.compress_type=info.compress_type; ni.external_attr=info.external_attr; ni.internal_attr=info.internal_attr
-                  ni.create_system=info.create_system; ni.extra=info.extra; ni.comment=info.comment; ni.flag_bits=info.flag_bits
+                  ni.compress_type=info.compress_type
+                  ni.external_attr=info.external_attr
+                  ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system
+                  ni.extra=info.extra
+                  ni.comment=info.comment
+                  ni.flag_bits=info.flag_bits
                   zout.writestr(ni,blob)
               for name,blob in sorted(updates.items()):
-                  ni=zipfile.ZipInfo(name,(2026,9,30,17,10,0)); ni.compress_type=zipfile.ZIP_DEFLATED; ni.create_system=3; ni.external_attr=0o100644 << 16
+                  ni=zipfile.ZipInfo(name,(2026,9,30,17,10,0))
+                  ni.compress_type=zipfile.ZIP_DEFLATED
+                  ni.create_system=3
+                  ni.external_attr=0o100644 << 16
                   zout.writestr(ni,blob)
           print(out)
           PY
@@ -235,7 +198,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ROOT=/tmp/tf-rev388-android; TAG=v1.17.01-assets; ZIP="$ROOT/TF_Analyzer_Android_REV388_V1.17.01_PRODUCTION_SIGNING_READY.zip"; SHA="$ZIP.sha256"
+          ROOT=/tmp/tf-rev388-android
+          TAG=v1.17.01-assets
+          ZIP="$ROOT/TF_Analyzer_Android_REV388_V1.17.01_PRODUCTION_SIGNING_READY.zip"
+          SHA="$ZIP.sha256"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV388 - Production Signing Ready' --notes-file release-staging/REV388-signing-ready/RELEASE_NOTES.md --prerelease
             gh release upload "$TAG" "$ZIP" "$SHA" --clobber
@@ -247,7 +213,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ROOT=/tmp/tf-rev388-android; TAG=v1.17.01-android; APK="$ROOT/TF.Analyzer.Analyst.V1.17.01_REV388_PERFORMANCE_HOLDING_FRESH_INSTALL.apk"; SHA="$APK.sha256"
+          ROOT=/tmp/tf-rev388-android
+          TAG=v1.17.01-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.17.01_REV388_PERFORMANCE_HOLDING_FRESH_INSTALL.apk"
+          SHA="$APK.sha256"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.01 - REV388 Performance Holding' --notes-file release-staging/REV388-apk/RELEASE_NOTES.md --prerelease
             gh release upload "$TAG" "$APK" "$SHA" --clobber
