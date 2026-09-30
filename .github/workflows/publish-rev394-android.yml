@@ -1,0 +1,191 @@
+name: Publish Android REV394 risk icon layout
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV394-apk/READY'
+permissions:
+  contents: write
+concurrency:
+  group: publish-android-rev394
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch REV394 mobile release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev394-android
+          rm -rf "$ROOT" && mkdir -p "$ROOT/mobile" "$ROOT/base" "$ROOT/signing-ready/assets/www"
+          gh release download v1.17.07 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV394_RISK_ICON_LAYOUT.zip' --output "$ROOT/mobile.zip"
+          unzip -tq "$ROOT/mobile.zip"
+          unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
+      - name: Validate mobile source
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev394-android/mobile
+          node --check "$ROOT/assets/dashboard-mobile.js"
+          node --check "$ROOT/mobile-license-gate.js"
+          node --check "$ROOT/mobile-force-update.js"
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/tf-rev394-android/mobile')
+          dash=(root/'assets/dashboard-mobile.js').read_text()
+          gate=(root/'mobile-license-gate.js').read_text()
+          proxy=(root/'activation-proxy.html').read_text()
+          upd=(root/'mobile-force-update.js').read_text()
+          idx=(root/'index.html').read_text()
+          assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
+          assert 'REV392 HARD RANGE BOUNDARY' in dash
+          assert 'tfTradeRangeStartMonthIdx = startIdx;' in dash
+          assert 'if (mk !== firstMonthKey)' not in dash
+          assert 'rowsForUi.filter(r => tf_isHistoryRowEnabled(r))' in dash
+          assert 'REV393: Latest-month Drawdown / Consecutive Loss warning system' in dash
+          assert "function tf_applyLatestRiskToElement(el, analyst, pair, showIcon, iconPosition)" in dash
+          assert "tf_applyLatestRiskToElement(nameSpan, name, null, false);" in dash
+          assert 'const drawdown = cumulative < (peak - 1e-9);' in dash
+          assert 'const consecutiveLoss = maxLossStreak >= 2;' in dash
+          assert 'const severity = (drawdown && consecutiveLoss) ? 2' in dash
+          assert "icon.textContent = st.severity >= 2 ? '×' : '!';" in dash
+          assert "function tf_applyLatestRiskToElement(el, analyst, pair, showIcon, iconPosition)" in dash
+          assert "tf_applyLatestRiskToElement(nameSpan, it.name, null, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(nameCell, a.baseName || a.name, a.pair || getPrimaryPairForAnalyst(a), false);" in dash
+          assert "tf_applyLatestRiskToElement(span, analystName, a.pair || getPrimaryPairForAnalyst(a), true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', row.pair || '', true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(a, name, null, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(nameSpan, name, null, false);" in dash
+          assert 'tf_applyLatestRiskToElement(analystLink, entry.baseName, entry.pair, false);' in dash
+          assert 'LICENSE_ANDROID_RELAY_URL' in gate
+          assert 'REV392: Android WebView' in gate
+          assert "path: isLicenseFallbackPath(path) ? path : '/mobile/login'" in gate
+          assert 'androidRelayLicenseLookup' in gate
+          assert 'return await directLicenseLookup(body, Math.max(timeoutMs, 25000));' in gate
+          assert "remoteRevision: 'REV394'" in gate
+          assert "mobileVersion: '1.17.07'" in gate
+          assert 'TF_LICENSE_RELAY_LOOKUP' in proxy
+          assert "lookup(d.path||'/mobile/login'" in proxy
+          assert "remoteRevision:'REV394'" in proxy
+          assert "var CURRENT_TAG = 'v1.17.07';" in upd
+          assert '?rev=394' in idx
+          print('REV394 Android layout source QA PASS')
+          PY
+      - name: Build production-signing-ready package
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev394-android
+          cp -a "$ROOT/mobile/." "$ROOT/signing-ready/assets/www/"
+          cat > "$ROOT/signing-ready/README_ANDROID_REV394_SIGNING_READY.txt" <<'EOF'
+          TF Analyzer Analyst Android REV394 / v1.17.07
+          Latest-month risk warnings + Android activation relay.
+          For update-in-place, sign with the original production/update key.
+          EOF
+          (cd "$ROOT/signing-ready" && zip -qr "$ROOT/TF_Analyzer_Android_REV394_V1.17.07_PRODUCTION_SIGNING_READY.zip" .)
+          sha256sum "$ROOT/TF_Analyzer_Android_REV394_V1.17.07_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV394_V1.17.07_PRODUCTION_SIGNING_READY.zip.sha256"
+      - name: Build fresh-install APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev394-android
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --dir "$ROOT/base"
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('/tmp/tf-rev394-android')
+          src=root/'base'/'TF.Analyzer.Analyst.V1.16.69_REV372.apk'
+          out=root/'TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk'
+          web=root/'mobile'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'): continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')): continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.16.69'.encode('utf-16le'); new='1.17.07'.encode('utf-16le')
+          assert data.count(old)==1
+          data=data.replace(old,new,1)
+          code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
+          pos=data.find(code110)
+          assert pos>=0 and data.find(code110,pos+1)<0
+          data[pos+4:pos+8]=(124).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in web.rglob('*'):
+              if p.is_file(): updates['assets/www/'+p.relative_to(web).as_posix()]=p.read_bytes()
+          updates['assets/www/README_ANDROID_REV394.txt']=b'TF Analyzer Analyst Android REV394\nVersion: v1.17.07\nVersion Code: 124\nAndroid activation relay + REV394 latest-month risk warnings.\n'
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type; ni.external_attr=info.external_attr; ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system; ni.extra=info.extra; ni.comment=info.comment; ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,30,17,15,0)); ni.compress_type=zipfile.ZIP_DEFLATED; ni.create_system=3; ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev394-fresh.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev394-fresh -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV394 Fresh Install, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev394-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk" tfanalyzer-rev394-fresh
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='/tmp/tf-rev394-android/TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk'
+          with zipfile.ZipFile(apk) as z:
+              gate=z.read('assets/www/mobile-license-gate.js').decode()
+              dash=z.read('assets/www/assets/dashboard-mobile.js').decode()
+              proxy=z.read('assets/www/activation-proxy.html').decode()
+              upd=z.read('assets/www/mobile-force-update.js').decode()
+          assert 'androidRelayLicenseLookup' in gate
+          assert "remoteRevision: 'REV394'" in gate
+          assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
+          assert 'REV394: Latest-month Drawdown / Consecutive Loss warning system' in dash
+          assert 'TF_LICENSE_RELAY_LOOKUP' in proxy
+          assert "var CURRENT_TAG = 'v1.17.07';" in upd
+          print('REV394 embedded APK layout QA PASS')
+          PY
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk.sha256"
+      - name: Publish signing-ready assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev394-android
+          TAG=v1.17.07-assets
+          ZIP="$ROOT/TF_Analyzer_Android_REV394_V1.17.07_PRODUCTION_SIGNING_READY.zip"
+          SHA="$ZIP.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV394 - Production Signing Ready' --notes-file release-staging/REV394-signing-ready/RELEASE_NOTES.md --prerelease
+            gh release upload "$TAG" "$ZIP" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV394 - Production Signing Ready' --notes-file release-staging/REV394-signing-ready/RELEASE_NOTES.md --prerelease
+          fi
+      - name: Publish stable APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev394-android
+          TAG=v1.17.07-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.17.07_REV394_RISK_ICON_LAYOUT_FRESH_INSTALL.apk"
+          SHA="$APK.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.07 - REV394' --notes-file release-staging/REV394-apk/RELEASE_NOTES.md --latest
+            gh release upload "$TAG" "$APK" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$APK" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.07 - REV394' --notes-file release-staging/REV394-apk/RELEASE_NOTES.md --latest
+          fi
