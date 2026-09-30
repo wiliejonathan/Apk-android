@@ -191,9 +191,9 @@ jobs:
           assert 'REV393: Latest-month Drawdown / Consecutive Loss warning system' in dash
           assert 'TF_LICENSE_RELAY_LOOKUP' in proxy
           assert "var CURRENT_TAG = 'v1.17.11';" in upd
-          assert 'REV398 HARD FALLBACK' in dash
-          assert 'REV398_ANALYST_COLOR_OBSERVER' in dash
-          assert 'REV398 — nested analyst name color inheritance' in css
+          assert 'REV397 HARD FALLBACK' in dash
+          assert 'REV397_ANALYST_COLOR_OBSERVER' in dash
+          assert 'REV397 — nested analyst name color inheritance' in css
           assert "tf_applyLatestRiskToElement(nameCell, baseName, rowPair, true, 'left');" in dash
           assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', row.pair || '', true, 'left');" in dash
           assert "parts.push(pad2(hours)+'h');" in dash
