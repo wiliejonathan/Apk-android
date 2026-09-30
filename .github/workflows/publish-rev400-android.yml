@@ -1,0 +1,254 @@
+name: Publish Android REV400 analyst name span fix
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV400-apk/READY'
+permissions:
+  contents: write
+concurrency:
+  group: publish-android-rev400
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch REV400 mobile release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev400-android
+          rm -rf "$ROOT" && mkdir -p "$ROOT/mobile" "$ROOT/base" "$ROOT/signing-ready/assets/www"
+          gh release download v1.17.13 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV400_ANALYST_NAME_SPAN.zip' --output "$ROOT/mobile.zip"
+          unzip -tq "$ROOT/mobile.zip"
+          unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
+      - name: Validate mobile source
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev400-android/mobile
+          node --check "$ROOT/assets/dashboard-mobile.js"
+          node --check "$ROOT/mobile-license-gate.js"
+          node --check "$ROOT/mobile-force-update.js"
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/tf-rev400-android/mobile')
+          dash=(root/'assets/dashboard-mobile.js').read_text()
+          gate=(root/'mobile-license-gate.js').read_text()
+          proxy=(root/'activation-proxy.html').read_text()
+          upd=(root/'mobile-force-update.js').read_text()
+          idx=(root/'index.html').read_text()
+          css=(root/'assets/dashboard-original.css').read_text()
+          bridge=(root/'mobile-data-bridge.js').read_text()
+          assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
+          assert 'REV392 HARD RANGE BOUNDARY' in dash
+          assert 'tfTradeRangeStartMonthIdx = startIdx;' in dash
+          assert 'if (mk !== firstMonthKey)' not in dash
+          assert 'rowsForUi.filter(r => tf_isHistoryRowEnabled(r))' in dash
+          assert 'REV393: Latest-month Drawdown / Consecutive Loss warning system' in dash
+          assert "tf_getLatestRiskState(analyst, pair) || tf_getLatestRiskState(analyst, null)" in dash
+          assert "parts.push(pad2(minutes)+'m');" in dash
+          assert "tf-history-row-pnl-positive" in dash
+          assert 'function tf_applyLatestRiskPairIconOnly' in dash
+          assert "tf_getLatestRiskState(analyst, pair) || tf_getLatestRiskState(analyst, null)" in dash
+          assert "tf_applyLatestRiskToElement(nameCell, a.baseName || a.name, null, false);" in dash
+          assert "el.classList.add(st.severity >= 2 ? 'tf-latest-risk-critical' : (st.severity === 1 ? 'tf-latest-risk-warning' : 'tf-latest-risk-healthy'));" in dash
+          assert "parts.push(pad2(minutes)+'m');" in dash
+          assert "tr.classList.add(__pnlPctForRow >= 0 ? 'tf-history-row-pnl-positive' : 'tf-history-row-pnl-negative');" in dash
+          assert "icon.textContent = st.severity >= 2 ? '×' : (st.severity === 1 ? '!' : '✓');" in dash
+          assert "function tf_applyLatestRiskToElement(el, analyst, pair, showIcon, iconPosition)" in dash
+          assert "tf_applyLatestRiskToElement(nameSpan, name, null, false);" in dash
+          assert 'const drawdown = cumulative < (peak - 1e-9);' in dash
+          assert 'const consecutiveLoss = maxLossStreak >= 2;' in dash
+          assert 'const severity = (drawdown && consecutiveLoss) ? 2' in dash
+          assert "icon.textContent = st.severity >= 2 ? '×' : (st.severity === 1 ? '!' : '✓');" in dash
+          assert 'function tf_applyLatestRiskPairIconOnly' in dash
+          assert "function tf_applyLatestRiskToElement(el, analyst, pair, showIcon, iconPosition)" in dash
+          assert "tf_applyLatestRiskToElement(nameSpan, it.name, null, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(nameCell, a.baseName || a.name, null, false);" in dash
+          assert "tf_applyLatestRiskToElement(span, analystName, a.pair || getPrimaryPairForAnalyst(a), true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', row.pair || '', true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(a, name, null, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(nameSpan, name, null, false);" in dash
+          assert 'tf_applyLatestRiskToElement(analystLink, entry.baseName, null, false);' in dash
+          assert 'LICENSE_ANDROID_RELAY_URL' in gate
+          assert 'REV392: Android WebView' in gate
+          assert "path: isLicenseFallbackPath(path) ? path : '/mobile/login'" in gate
+          assert 'androidRelayLicenseLookup' in gate
+          assert 'return await directLicenseLookup(body, Math.max(timeoutMs, 25000));' in gate
+          assert "remoteRevision: 'REV400'" in gate
+          assert "mobileVersion: '1.17.13'" in gate
+          assert 'TF_LICENSE_RELAY_LOOKUP' in proxy
+          assert "lookup(d.path||'/mobile/login'" in proxy
+          assert "remoteRevision:'REV400'" in proxy
+          assert "var CURRENT_TAG = 'v1.17.13';" in upd
+          assert "tf_applyLatestRiskToElement(nameCell, baseName, rowPair, true, 'left');" in dash
+          assert 'tf_table1WarnedAnalysts' not in dash
+          assert "parts.push(pad2(hours)+'h');" in dash
+          assert "nameCell.removeAttribute('title');" in dash
+          assert "display:inline-flex;" in css
+          assert "vertical-align:middle;" in css
+          assert "top:-0.5px;" in css
+          assert '#history-table tbody tr.tf-history-row-pnl-positive > td:not([data-history-col="analyst"]) *' in css
+          assert '?rev=399' in idx
+          assert 'REV397 HARD FALLBACK' in dash
+          assert 'function tf_applyLatestRiskColorOnly' in dash
+          assert 'function tf_colorEveryRenderedAnalystName' in dash
+          assert 'REV397_ANALYST_COLOR_OBSERVER' in dash
+          assert "syntheticHealthy:true" in dash
+          assert "replace(/^\\s*[✓!×]\\s*/,'')" in dash
+          assert 'REV397 — nested analyst name color inheritance' in css
+          assert 'function tf_forceLatestRiskTextColor' in dash
+          assert "style.setProperty('color', color, 'important')" in dash
+          assert 'REV398 exact table pass' in dash
+          assert 'function tfMobileParseImportJsonV399' in bridge
+          assert 'window.__tfRev293ImportCancelled=false;' in bridge
+          assert 'Data lama tidak dihapus.' in bridge
+          assert 'function tfMobileParseImportJsonV399' in bridge
+          assert 'function tfMobileLooksCanonicalStorageV399' in bridge
+          assert 'window.__tfRev293ImportCancelled=false;' in bridge
+          assert 'Data lama tidak dihapus.' in bridge
+          assert "scope.querySelectorAll('#summary-table tbody tr')" in dash
+          assert "scope.querySelectorAll('#monthly-table tbody tr')" in dash
+          assert "scope.querySelectorAll('#history-table tbody tr')" in dash
+          assert "scope.querySelectorAll('#tf-score-summary-body .tf-score-analyst, .tf-score-summary-table .tf-score-analyst')" in dash
+          assert 'function tf_createAnalystNameColorTarget' in dash
+          assert 'function tf_ensureAnalystNameColorTarget' in dash
+          assert '.tf-analyst-name-color-target' in css
+          assert '-webkit-text-fill-color:#22c55e !important;' in css
+          assert '-webkit-text-fill-color:#facc15 !important;' in css
+          assert '-webkit-text-fill-color:#ef4444 !important;' in css
+          print('REV400 Android analyst-name span QA PASS')
+          PY
+      - name: Build production-signing-ready package
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev400-android
+          cp -a "$ROOT/mobile/." "$ROOT/signing-ready/assets/www/"
+          cat > "$ROOT/signing-ready/README_ANDROID_REV400_SIGNING_READY.txt" <<'EOF'
+          TF Analyzer Analyst Android REV400 / v1.17.13
+          Dedicated analyst-name span fix for Tables 1/2/3/4 + REV399 JSON import fix.
+          For update-in-place, sign with the original production/update key.
+          EOF
+          (cd "$ROOT/signing-ready" && zip -qr "$ROOT/TF_Analyzer_Android_REV400_V1.17.13_PRODUCTION_SIGNING_READY.zip" .)
+          sha256sum "$ROOT/TF_Analyzer_Android_REV400_V1.17.13_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV400_V1.17.13_PRODUCTION_SIGNING_READY.zip.sha256"
+      - name: Build fresh-install APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev400-android
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --dir "$ROOT/base"
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('/tmp/tf-rev400-android')
+          src=root/'base'/'TF.Analyzer.Analyst.V1.16.69_REV372.apk'
+          out=root/'TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk'
+          web=root/'mobile'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'): continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')): continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.16.69'.encode('utf-16le'); new='1.17.13'.encode('utf-16le')
+          assert data.count(old)==1
+          data=data.replace(old,new,1)
+          code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
+          pos=data.find(code110)
+          assert pos>=0 and data.find(code110,pos+1)<0
+          data[pos+4:pos+8]=(130).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in web.rglob('*'):
+              if p.is_file(): updates['assets/www/'+p.relative_to(web).as_posix()]=p.read_bytes()
+          updates['assets/www/README_ANDROID_REV400.txt']=b'TF Analyzer Analyst Android REV400\nVersion: v1.17.13\nVersion Code: 129\nAndroid activation relay + REV400 analyst-name span fix + REV399 JSON import fix.\n'
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type; ni.external_attr=info.external_attr; ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system; ni.extra=info.extra; ni.comment=info.comment; ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,30,17,15,0)); ni.compress_type=zipfile.ZIP_DEFLATED; ni.create_system=3; ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev400-fresh.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev400-fresh -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV400 Fresh Install, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev400-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk" tfanalyzer-rev400-fresh
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='/tmp/tf-rev400-android/TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk'
+          with zipfile.ZipFile(apk) as z:
+              gate=z.read('assets/www/mobile-license-gate.js').decode()
+              dash=z.read('assets/www/assets/dashboard-mobile.js').decode()
+              proxy=z.read('assets/www/activation-proxy.html').decode()
+              upd=z.read('assets/www/mobile-force-update.js').decode()
+              css=z.read('assets/www/assets/dashboard-original.css').decode()
+              bridge=z.read('assets/www/mobile-data-bridge.js').decode()
+          assert 'androidRelayLicenseLookup' in gate
+          assert "remoteRevision: 'REV400'" in gate
+          assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
+          assert 'REV393: Latest-month Drawdown / Consecutive Loss warning system' in dash
+          assert 'TF_LICENSE_RELAY_LOOKUP' in proxy
+          assert "var CURRENT_TAG = 'v1.17.13';" in upd
+          assert 'REV397 HARD FALLBACK' in dash
+          assert 'REV397_ANALYST_COLOR_OBSERVER' in dash
+          assert 'REV397 — nested analyst name color inheritance' in css
+          assert "tf_applyLatestRiskToElement(nameCell, baseName, rowPair, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', row.pair || '', true, 'left');" in dash
+          assert "parts.push(pad2(hours)+'h');" in dash
+          assert "display:inline-flex;" in css and "top:-0.5px;" in css
+          assert 'function tf_forceLatestRiskTextColor' in dash
+          assert "style.setProperty('color', color, 'important')" in dash
+          assert 'REV398 exact table pass' in dash
+          assert 'function tf_createAnalystNameColorTarget' in dash
+          assert 'function tf_ensureAnalystNameColorTarget' in dash
+          assert '.tf-analyst-name-color-target' in css
+          print('REV400 embedded APK analyst-name span QA PASS')
+          PY
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk.sha256"
+      - name: Publish signing-ready assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev400-android
+          TAG=v1.17.13-assets
+          ZIP="$ROOT/TF_Analyzer_Android_REV400_V1.17.13_PRODUCTION_SIGNING_READY.zip"
+          SHA="$ZIP.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV400 - Production Signing Ready' --notes-file release-staging/REV400-signing-ready/RELEASE_NOTES.md --prerelease
+            gh release upload "$TAG" "$ZIP" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV400 - Production Signing Ready' --notes-file release-staging/REV400-signing-ready/RELEASE_NOTES.md --prerelease
+          fi
+      - name: Publish stable APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev400-android
+          TAG=v1.17.13-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk"
+          SHA="$APK.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.13 - REV400' --notes-file release-staging/REV400-apk/RELEASE_NOTES.md --latest
+            gh release upload "$TAG" "$APK" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$APK" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.13 - REV400' --notes-file release-staging/REV400-apk/RELEASE_NOTES.md --latest
+          fi
