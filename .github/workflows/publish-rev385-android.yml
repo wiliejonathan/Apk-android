@@ -1,0 +1,164 @@
+name: Publish Android REV385 assets and fresh-install APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV385-apk/READY'
+permissions:
+  contents: write
+concurrency:
+  group: publish-android-rev385
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch REV385 mobile source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev385-android
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/mobile" "$ROOT/base" "$ROOT/signing-ready/assets/www"
+          gh release download v1.16.98 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV385_HOLDING_TABLE3_SOURCE_FIX.zip' --output "$ROOT/mobile.zip"
+          unzip -tq "$ROOT/mobile.zip"
+          unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
+          grep -F 'tf_parseHistoryTableDateMs' "$ROOT/mobile/assets/dashboard-mobile.js"
+          grep -F 'tf_renderHoldingPeriodTables(rowsForUi)' "$ROOT/mobile/assets/dashboard-mobile.js"
+          grep -F "var CURRENT_TAG = 'v1.16.98';" "$ROOT/mobile/mobile-force-update.js"
+          grep -F '?rev=385' "$ROOT/mobile/index.html"
+      - name: Build production-signing-ready package
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev385-android
+          cp -a "$ROOT/mobile/." "$ROOT/signing-ready/assets/www/"
+          cat > "$ROOT/signing-ready/README_ANDROID_REV385_SIGNING_READY.txt" <<'EOF'
+          TF Analyzer Analyst Android REV385 / v1.16.98 - Production Signing Ready
+          =========================================================================
+          Source: iOS/browser REV385 v1.16.98.
+          Replace production wrapper assets/www with this folder.
+          Sign using the ORIGINAL production/update key if update-in-place is required.
+          EOF
+          (cd "$ROOT/signing-ready" && zip -qr "$ROOT/TF_Analyzer_Android_REV385_V1.16.98_PRODUCTION_SIGNING_READY.zip" .)
+          sha256sum "$ROOT/TF_Analyzer_Android_REV385_V1.16.98_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV385_V1.16.98_PRODUCTION_SIGNING_READY.zip.sha256"
+      - name: Build REV385 fresh-install APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev385-android
+          gh release download v1.16.69 --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.16.69_REV372.apk' --dir "$ROOT/base"
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('/tmp/tf-rev385-android')
+          src=root/'base'/'TF.Analyzer.Analyst.V1.16.69_REV372.apk'
+          out=root/'TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk'
+          mobile=root/'mobile'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'):
+                  continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')):
+                  continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.16.69'.encode('utf-16le')
+          new='1.16.98'.encode('utf-16le')
+          assert data.count(old)==1
+          data=data.replace(old,new,1)
+          code110=bytes([0x08,0x00,0x00,0x10])+(110).to_bytes(4,'little')
+          pos=data.find(code110)
+          assert pos>=0 and data.find(code110,pos+1)<0
+          data[pos+4:pos+8]=(115).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in mobile.rglob('*'):
+              if p.is_file():
+                  updates['assets/www/'+p.relative_to(mobile).as_posix()]=p.read_bytes()
+          updates['assets/www/README_ANDROID_REV385.txt']=(
+              'TF Analyzer Analyst Android REV385\n'
+              'Version: v1.16.98\n'
+              'Version Code: 115\n'
+              'Holding source: exact final Table 3 rows; Closed At - Created At.\n'
+          ).encode()
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type
+                  ni.external_attr=info.external_attr
+                  ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system
+                  ni.extra=info.extra
+                  ni.comment=info.comment
+                  ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,30,15,30,0))
+                  ni.compress_type=zipfile.ZIP_DEFLATED
+                  ni.create_system=3
+                  ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev385-fresh.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev385-fresh -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV385 Fresh Install, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev385-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk" tfanalyzer-rev385-fresh
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='/tmp/tf-rev385-android/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk'
+          with zipfile.ZipFile(apk) as z:
+              dash=z.read('assets/www/assets/dashboard-mobile.js').decode()
+              upd=z.read('assets/www/mobile-force-update.js').decode()
+              idx=z.read('assets/www/index.html').decode()
+          assert 'tf_parseHistoryTableDateMs' in dash
+          assert 'tf_renderHoldingPeriodTables(rowsForUi)' in dash
+          assert 'tf_holdingAllTickerRows' not in dash
+          assert "var CURRENT_TAG = 'v1.16.98';" in upd
+          assert '?rev=385' in idx
+          print('REV385 APK embedded QA PASS')
+          PY
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk.sha256"
+      - name: Publish production-signing-ready assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev385-android
+          TAG=v1.16.98-assets
+          ZIP="$ROOT/TF_Analyzer_Android_REV385_V1.16.98_PRODUCTION_SIGNING_READY.zip"
+          SHA="$ZIP.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV385 - Production Signing Ready' --notes-file release-staging/REV385-signing-ready/RELEASE_NOTES.md --prerelease
+            gh release upload "$TAG" "$ZIP" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV385 - Production Signing Ready' --notes-file release-staging/REV385-signing-ready/RELEASE_NOTES.md --prerelease
+          fi
+      - name: Publish fresh-install APK prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev385-android
+          TAG=v1.16.98-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk"
+          SHA="$APK.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.16.98 - REV385 Fresh Install' --notes-file release-staging/REV385-apk/RELEASE_NOTES.md --prerelease
+            gh release upload "$TAG" "$APK" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$APK" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.16.98 - REV385 Fresh Install' --notes-file release-staging/REV385-apk/RELEASE_NOTES.md --prerelease
+          fi
