@@ -1,15 +1,16 @@
 # TF Analyzer Analyst Android v1.16.98 — REV385
 
-## Holding Period — Table 3 Source-of-Truth Fix
+## Holding Period Accuracy Fix
 
-Build Android ini memakai source iOS/browser REV385 v1.16.98 yang sama.
+Build Android ini memakai source iOS/browser REV385 v1.16.98 final.
 
-- Holding = Table 3 Closed At − Table 3 Created At.
-- Label tanggal WIB yang tampil di Table 3 menjadi source of truth.
-- Numeric sort keys hanya fallback kompatibilitas.
-- Max dan Avg memakai exact final trade rows Table 3 setelah filter Nama Analis/Pair, Time Range, Time Range per Month, dan Filter Tanggal.
+- Holding = Table 3 **Closed At − Created At**.
+- Sumber utama adalah string tanggal yang benar-benar tampil: `displayDate` dan `createdDate`.
+- Numeric sort keys hanya fallback untuk legacy rows.
+- **Max Holding Period** memakai seluruh history untuk Analyst-Pair yang aktif.
+- **Avg Holding Period** mengikuti Time Range, Time Range per Month, dan Filter Tanggal aktif.
 - Withdraw tidak dihitung.
-- Alignment REV384 dan Table 3 performance fix tetap dipertahankan.
+- Alignment REV384, no-inner-scroll, import persistence, dan Table 3 performance fix tetap dipertahankan.
 
 ### Signing
-APK release ini adalah fresh-install/QA build karena private production/update key lama tidak tersimpan di repository. Paket production-signing-ready juga dipublish untuk build dengan key production yang benar.
+APK release ini adalah fresh-install/QA build; paket production-signing-ready juga tersedia untuk signing dengan key production lama.
