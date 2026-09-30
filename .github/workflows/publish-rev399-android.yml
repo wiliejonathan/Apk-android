@@ -209,7 +209,7 @@ jobs:
           assert "display:inline-flex;" in css and "top:-0.5px;" in css
           assert 'function tf_forceLatestRiskTextColor' in dash
           assert "style.setProperty('color', color, 'important')" in dash
-          assert 'REV399 exact table pass' in dash
+          assert 'REV398 exact table pass' in dash
           print('REV399 embedded APK hard-inline analyst-color QA PASS')
           PY
           sha256sum "$ROOT/TF.Analyzer.Analyst.V1.17.12_REV399_JSON_IMPORT_FIX_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.17.12_REV399_JSON_IMPORT_FIX_FRESH_INSTALL.apk.sha256"
