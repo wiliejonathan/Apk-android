@@ -13,6 +13,8 @@ on:
       - '!release-staging/REV395-apk/**'
       - '!release-staging/REV396-apk/**'
       - '!release-staging/REV396-signing-ready/**'
+      - '!release-staging/REV398-apk/**'
+      - '!release-staging/REV398-signing-ready/**'
       - '!release-staging/REV395-signing-ready/**'
 
 permissions:
