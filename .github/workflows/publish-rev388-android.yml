@@ -42,8 +42,8 @@ jobs:
           shell.write_text(s.replace(old,new,1))
           dash=root/'assets/dashboard-mobile.js'
           d=dash.read_text()
-          old_note='<div class="tf-holding-note"><strong>Max</strong> = holding period terlama dari seluruh trade yang masih termasuk ticker/analis-pair aktif. <strong>Avg.</strong> = rata-rata holding period dalam filter aktif (Time Range / Time Range per Month / Filter Tanggal).</div>'
-          new_note='<div class="tf-holding-note"><strong>Max</strong> = holding period terlama dalam filter aktif. <strong>Avg.</strong> = rata-rata holding period dalam filter aktif (Time Range / Time Range per Month / Filter Tanggal / Nama Analis / Pair).</div>'
+          old_note='<strong>Max</strong> = holding period terlama dari seluruh trade yang masih termasuk ticker/analis-pair aktif. <strong>Avg.</strong> = rata-rata holding period dalam filter aktif (Time Range / Time Range per Month / Filter Tanggal).'
+          new_note='<strong>Max</strong> = holding period terlama dalam filter aktif. <strong>Avg.</strong> = rata-rata holding period dalam filter aktif (Time Range / Time Range per Month / Filter Tanggal / Nama Analis / Pair).'
           assert old_note in d, 'Holding note anchor not found'
           d=d.replace(old_note,new_note,1)
           assert 'REV387: Max and Avg both use the exact active Table 3 filtered trade rows.' in d
