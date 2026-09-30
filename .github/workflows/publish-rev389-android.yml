@@ -38,27 +38,31 @@ jobs:
           gate=root/'mobile-license-gate.js'
           s=gate.read_text()
           old="      const result = await api('/mobile/login', { email, token });"
-          new="""      let result;
-      try {
-        // REV389 Android: valid-license lookups can take longer than an invalid-token lookup
-        // because the activation server may need device/session storage checks.
-        result = await api('/mobile/login', { email, token }, 30000);
-      } catch (firstError) {
-        const transient = firstError && (firstError.name === 'AbortError' || firstError.name === 'TypeError');
-        if (!transient) throw firstError;
-        setStatus('Koneksi server aktivasi lambat. Mencoba ulang…');
-        await new Promise(resolve => setTimeout(resolve, 700));
-        result = await api('/mobile/login', { email, token }, 45000);
-      }"""
+          new="\\n".join([
+              "      let result;",
+              "      try {",
+              "        // REV389 Android: valid-license lookups can take longer than an invalid-token lookup",
+              "        // because the activation server may need device/session storage checks.",
+              "        result = await api('/mobile/login', { email, token }, 30000);",
+              "      } catch (firstError) {",
+              "        const transient = firstError && (firstError.name === 'AbortError' || firstError.name === 'TypeError');",
+              "        if (!transient) throw firstError;",
+              "        setStatus('Koneksi server aktivasi lambat. Mencoba ulang…');",
+              "        await new Promise(resolve => setTimeout(resolve, 700));",
+              "        result = await api('/mobile/login', { email, token }, 45000);",
+              "      }",
+          ])
           assert old in s, 'login API call anchor not found'
           s=s.replace(old,new,1)
           oldcatch="      setStatus(error && error.name === 'AbortError' ? 'Server aktivasi timeout.' : (error.message || String(error)), 'error');"
-          newcatch="""      const msg = error && error.name === 'AbortError'
-        ? 'Server aktivasi belum merespons setelah percobaan ulang. Periksa koneksi internet lalu coba lagi.'
-        : (error && error.name === 'TypeError'
-          ? 'Koneksi ke server aktivasi gagal. Periksa internet/VPN/DNS lalu coba lagi.'
-          : (error.message || String(error)));
-      setStatus(msg, 'error');"""
+          newcatch="\\n".join([
+              "      const msg = error && error.name === 'AbortError'",
+              "        ? 'Server aktivasi belum merespons setelah percobaan ulang. Periksa koneksi internet lalu coba lagi.'",
+              "        : (error && error.name === 'TypeError'",
+              "          ? 'Koneksi ke server aktivasi gagal. Periksa internet/VPN/DNS lalu coba lagi.'",
+              "          : (error.message || String(error)));",
+              "      setStatus(msg, 'error');",
+          ])
           assert oldcatch in s, 'login catch anchor not found'
           s=s.replace(oldcatch,newcatch,1)
           s=s.replace("mobileVersion: '1.0.110'","mobileVersion: '1.17.02'",1)
