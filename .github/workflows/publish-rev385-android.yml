@@ -26,11 +26,11 @@ jobs:
           ROOT=/tmp/tf-rev385-android
           rm -rf "$ROOT"
           mkdir -p "$ROOT/mobile" "$ROOT/base" "$ROOT/signing-ready/assets/www"
-          gh release download v1.16.98 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV385_HOLDING_TABLE3_SOURCE_FIX.zip' --output "$ROOT/mobile.zip"
+          gh release download v1.16.98 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV385_HOLDING_ACCURACY_FIX.zip' --output "$ROOT/mobile.zip"
           unzip -tq "$ROOT/mobile.zip"
           unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
           grep -F 'tf_parseHistoryTableDateMs' "$ROOT/mobile/assets/dashboard-mobile.js"
-          grep -F 'tf_renderHoldingPeriodTables(rowsForUi)' "$ROOT/mobile/assets/dashboard-mobile.js"
+          grep -F 'tf_renderHoldingPeriodTables(tf_holdingAllTickerRows, rowsForUi)' "$ROOT/mobile/assets/dashboard-mobile.js"
           grep -F "var CURRENT_TAG = 'v1.16.98';" "$ROOT/mobile/mobile-force-update.js"
           grep -F '?rev=385' "$ROOT/mobile/index.html"
       - name: Build production-signing-ready package
@@ -59,7 +59,7 @@ jobs:
           import zipfile
           root=Path('/tmp/tf-rev385-android')
           src=root/'base'/'TF.Analyzer.Analyst.V1.16.69_REV372.apk'
-          out=root/'TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk'
+          out=root/'TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk'
           mobile=root/'mobile'
           with zipfile.ZipFile(src,'r') as zin:
               infos={i.filename:i for i in zin.infolist()}
@@ -90,7 +90,7 @@ jobs:
               'TF Analyzer Analyst Android REV385\n'
               'Version: v1.16.98\n'
               'Version Code: 115\n'
-              'Holding source: exact final Table 3 rows; Closed At - Created At.\n'
+              'Holding source: exact Table 3 Created At/Closed At; Max all-history active Analyst-Pair, Avg active filters.\n'
           ).encode()
           with zipfile.ZipFile(out,'w') as zout:
               for name,blob in keep.items():
@@ -114,24 +114,24 @@ jobs:
           PY
           PW=$(openssl rand -hex 16)
           keytool -genkeypair -keystore "$ROOT/rev385-fresh.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev385-fresh -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV385 Fresh Install, OU=Mobile, O=Skill Fusion, C=ID'
-          jarsigner -keystore "$ROOT/rev385-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk" tfanalyzer-rev385-fresh
-          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk" >/dev/null
-          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk"
+          jarsigner -keystore "$ROOT/rev385-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk" tfanalyzer-rev385-fresh
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk"
           python3 - <<'PY'
           import zipfile
-          apk='/tmp/tf-rev385-android/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk'
+          apk='/tmp/tf-rev385-android/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk'
           with zipfile.ZipFile(apk) as z:
               dash=z.read('assets/www/assets/dashboard-mobile.js').decode()
               upd=z.read('assets/www/mobile-force-update.js').decode()
               idx=z.read('assets/www/index.html').decode()
           assert 'tf_parseHistoryTableDateMs' in dash
-          assert 'tf_renderHoldingPeriodTables(rowsForUi)' in dash
-          assert 'tf_holdingAllTickerRows' not in dash
+          assert 'tf_renderHoldingPeriodTables(tf_holdingAllTickerRows, rowsForUi)' in dash
+          assert 'tf_holdingAllTickerRows' in dash
           assert "var CURRENT_TAG = 'v1.16.98';" in upd
           assert '?rev=385' in idx
           print('REV385 APK embedded QA PASS')
           PY
-          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk.sha256"
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk.sha256"
       - name: Publish production-signing-ready assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -154,10 +154,12 @@ jobs:
           set -euo pipefail
           ROOT=/tmp/tf-rev385-android
           TAG=v1.16.98-android
-          APK="$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk"
+          APK="$ROOT/TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_ACCURACY_FIX_FRESH_INSTALL.apk"
           SHA="$APK.sha256"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.16.98 - REV385 Fresh Install' --notes-file release-staging/REV385-apk/RELEASE_NOTES.md --prerelease
+            gh release delete-asset "$TAG" TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk --yes 2>/dev/null || true
+            gh release delete-asset "$TAG" TF.Analyzer.Analyst.V1.16.98_REV385_HOLDING_TABLE3_SOURCE_FIX_FRESH_INSTALL.apk.sha256 --yes 2>/dev/null || true
             gh release upload "$TAG" "$APK" "$SHA" --clobber
           else
             gh release create "$TAG" "$APK" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.16.98 - REV385 Fresh Install' --notes-file release-staging/REV385-apk/RELEASE_NOTES.md --prerelease
