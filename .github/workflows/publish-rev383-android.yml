@@ -20,7 +20,7 @@ jobs:
           java-version: '21'
       - name: Fetch REV383 mobile source
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ROOT=/tmp/tf-rev383-android
@@ -52,7 +52,7 @@ jobs:
           sha256sum "$ROOT/TF_Analyzer_Android_REV383_V1.16.96_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV383_V1.16.96_PRODUCTION_SIGNING_READY.zip.sha256"
       - name: Build REV383 fresh-install APK
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ROOT=/tmp/tf-rev383-android
@@ -141,7 +141,7 @@ jobs:
           sha256sum "$ROOT/TF.Analyzer.Analyst.V1.16.96_REV383_HOLDING_UI_FIX_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.16.96_REV383_HOLDING_UI_FIX_FRESH_INSTALL.apk.sha256"
       - name: Publish production-signing-ready assets
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ROOT=/tmp/tf-rev383-android
@@ -158,7 +158,7 @@ jobs:
           fi
       - name: Publish fresh-install APK prerelease
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ROOT=/tmp/tf-rev383-android
