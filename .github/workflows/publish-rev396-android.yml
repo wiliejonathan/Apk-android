@@ -72,7 +72,7 @@ jobs:
           assert "tf_applyLatestRiskToElement(nameCell, a.baseName || a.name, null, false);" in dash
           assert "tf_applyLatestRiskToElement(span, analystName, a.pair || getPrimaryPairForAnalyst(a), true, 'left');" in dash
           assert "tf_applyLatestRiskToElement(analystCell, row.analyst || '', row.pair || '', true, 'left');" in dash
-                    assert "tf_applyLatestRiskToElement(a, name, null, true, 'left');" in dash
+          assert "tf_applyLatestRiskToElement(a, name, null, true, 'left');" in dash
           assert "tf_applyLatestRiskToElement(nameSpan, name, null, false);" in dash
           assert 'tf_applyLatestRiskToElement(analystLink, entry.baseName, null, false);' in dash
           assert 'LICENSE_ANDROID_RELAY_URL' in gate
