@@ -11,6 +11,8 @@ on:
       - '!release-staging/REV394-apk/**'
       - '!release-staging/REV394-signing-ready/**'
       - '!release-staging/REV395-apk/**'
+      - '!release-staging/REV396-apk/**'
+      - '!release-staging/REV396-signing-ready/**'
       - '!release-staging/REV395-signing-ready/**'
 
 permissions:
