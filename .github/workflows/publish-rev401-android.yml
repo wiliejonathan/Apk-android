@@ -1,0 +1,174 @@
+name: Publish Android REV401 JSON remembered-links restore
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV401-apk/READY'
+permissions:
+  contents: write
+concurrency:
+  group: publish-android-rev401
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch REV401 mobile and REV400 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev401-android
+          rm -rf "$ROOT" && mkdir -p "$ROOT/mobile" "$ROOT/base" "$ROOT/signing-ready/assets/www"
+          gh release download v1.17.14 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV401_JSON_LINK_RESTORE.zip' --output "$ROOT/mobile.zip"
+          unzip -tq "$ROOT/mobile.zip"
+          unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
+          gh release download v1.17.13-android --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.17.13_REV400_ANALYST_NAME_SPAN_FIX_FRESH_INSTALL.apk' --output "$ROOT/base/rev400.apk"
+
+      - name: Validate mobile source
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev401-android/mobile
+          node --check "$ROOT/mobile-data-bridge.js"
+          node --check "$ROOT/assets/dashboard-mobile.js"
+          node --check "$ROOT/mobile-license-gate.js"
+          node --check "$ROOT/mobile-force-update.js"
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/tf-rev401-android/mobile')
+          bridge=(root/'mobile-data-bridge.js').read_text()
+          gate=(root/'mobile-license-gate.js').read_text()
+          upd=(root/'mobile-force-update.js').read_text()
+          dash=(root/'assets/dashboard-mobile.js').read_text()
+          css=(root/'assets/dashboard-original.css').read_text()
+          assert 'function tfMobileRecoverRememberedLinksV401' in bridge
+          assert 'remembered.length===0&&sources&&Object.keys(sources).length' in bridge
+          assert 'st.tfRememberedAnalystLinks=Object.keys(sources).sort().map' in bridge
+          assert 'st.tfRememberLinksEnabled=true;' in bridge
+          assert 'tfMobileRecoverRememberedLinksV401(st);' in bridge
+          assert "mobileVersion: '1.17.14'" in gate
+          assert "remoteRevision: 'REV401'" in gate
+          assert "var CURRENT_TAG = 'v1.17.14';" in upd
+          assert 'function tf_createAnalystNameColorTarget' in dash
+          assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
+          assert '.tf-analyst-name-color-target' in css
+          print('REV401 Android source QA PASS')
+          PY
+
+      - name: Build production-signing-ready package
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev401-android
+          cp -a "$ROOT/mobile/." "$ROOT/signing-ready/assets/www/"
+          cat > "$ROOT/signing-ready/README_ANDROID_REV401_SIGNING_READY.txt" <<'EOF'
+          TF Analyzer Analyst Android REV401 / v1.17.14
+          JSON remembered-links recovery + REV400 UI fixes.
+          For update-in-place, sign with the original production/update key.
+          EOF
+          (cd "$ROOT/signing-ready" && zip -qr "$ROOT/TF_Analyzer_Android_REV401_V1.17.14_PRODUCTION_SIGNING_READY.zip" .)
+          sha256sum "$ROOT/TF_Analyzer_Android_REV401_V1.17.14_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV401_V1.17.14_PRODUCTION_SIGNING_READY.zip.sha256"
+
+      - name: Build fresh-install APK
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev401-android
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('/tmp/tf-rev401-android')
+          src=root/'base'/'rev400.apk'
+          out=root/'TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk'
+          web=root/'mobile'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'): continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')): continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.17.13'.encode('utf-16le'); new='1.17.14'.encode('utf-16le')
+          assert data.count(old)==1, data.count(old)
+          data=data.replace(old,new,1)
+          code130=bytes([0x08,0x00,0x00,0x10])+(130).to_bytes(4,'little')
+          pos=data.find(code130)
+          assert pos>=0 and data.find(code130,pos+1)<0
+          data[pos+4:pos+8]=(131).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in web.rglob('*'):
+              if p.is_file(): updates['assets/www/'+p.relative_to(web).as_posix()]=p.read_bytes()
+          updates['assets/www/README_ANDROID_REV401.txt']=b'TF Analyzer Analyst Android REV401\nVersion: v1.17.14\nVersion Code: 131\nJSON remembered-links restore + REV400 UI fixes.\n'
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type; ni.external_attr=info.external_attr; ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system; ni.extra=info.extra; ni.comment=info.comment; ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,30,20,30,0)); ni.compress_type=zipfile.ZIP_DEFLATED; ni.create_system=3; ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev401-fresh.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev401-fresh -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV401 Fresh Install, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev401-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk" tfanalyzer-rev401-fresh
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='/tmp/tf-rev401-android/TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk'
+          with zipfile.ZipFile(apk) as z:
+              bridge=z.read('assets/www/mobile-data-bridge.js').decode()
+              gate=z.read('assets/www/mobile-license-gate.js').decode()
+              dash=z.read('assets/www/assets/dashboard-mobile.js').decode()
+              css=z.read('assets/www/assets/dashboard-original.css').decode()
+          assert 'function tfMobileRecoverRememberedLinksV401' in bridge
+          assert 'st.tfRememberLinksEnabled=true;' in bridge
+          assert "remoteRevision: 'REV401'" in gate
+          assert 'function tf_createAnalystNameColorTarget' in dash
+          assert 'tf_renderHoldingPeriodTables(rowsForCalc);' in dash
+          assert '.tf-analyst-name-color-target' in css
+          print('REV401 embedded APK QA PASS')
+          PY
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk.sha256"
+
+      - name: Publish signing-ready assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev401-android
+          TAG=v1.17.14-assets
+          ZIP="$ROOT/TF_Analyzer_Android_REV401_V1.17.14_PRODUCTION_SIGNING_READY.zip"
+          SHA="$ZIP.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV401 - Production Signing Ready' --notes-file release-staging/REV401-apk/RELEASE_NOTES.md --prerelease
+            gh release upload "$TAG" "$ZIP" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV401 - Production Signing Ready' --notes-file release-staging/REV401-apk/RELEASE_NOTES.md --prerelease
+          fi
+
+      - name: Publish stable APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev401-android
+          TAG=v1.17.14-android
+          APK="$ROOT/TF.Analyzer.Analyst.V1.17.14_REV401_JSON_LINK_RESTORE_FRESH_INSTALL.apk"
+          SHA="$APK.sha256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.14 - REV401' --notes-file release-staging/REV401-apk/RELEASE_NOTES.md --latest
+            gh release upload "$TAG" "$APK" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$APK" "$SHA" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.14 - REV401' --notes-file release-staging/REV401-apk/RELEASE_NOTES.md --latest
+          fi
