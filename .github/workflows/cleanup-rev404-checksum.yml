@@ -1,0 +1,16 @@
+name: Remove REV404 checksum download asset
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/cleanup-rev404-checksum.yml']
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove checksum file only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete-asset v1.17.17-android 'TF.Analyzer.Analyst.V1.17.17_REV404_ACTIVATION_RECOVERY_FRESH_INSTALL.apk.sha256' --repo wiliejonathan/Apk-android --yes
