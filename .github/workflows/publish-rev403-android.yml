@@ -35,7 +35,7 @@ jobs:
           grep -q 'tfMobileRecoverRenderPromiseV402' "$ROOT/mobile-data-bridge.js"
           grep -q '__TF_MOBILE_IMPORT_FAST_ACTIVE_V402' "$ROOT/mobile-data-bridge.js"
           grep -q '__TF_MOBILE_SILENT_STORAGE_SET=true' "$ROOT/mobile-data-bridge.js"
-          grep -q 'import-rev403-fast' "$ROOT/mobile-data-bridge.js"
+          grep -q 'import-rev402-fast' "$ROOT/mobile-data-bridge.js"
           grep -q 'function tfMobileRecoverRememberedLinksV401' "$ROOT/mobile-data-bridge.js"
           grep -q 'tf_renderHoldingPeriodTables(rowsForCalc);' "$ROOT/assets/dashboard-mobile.js"
           grep -q "remoteRevision: 'REV403'" "$ROOT/mobile-license-gate.js"
