@@ -38,7 +38,7 @@ jobs:
           gate=root/'mobile-license-gate.js'
           s=gate.read_text()
           old="      const result = await api('/mobile/login', { email, token });"
-          new="\\n".join([
+          new="\n".join([
               "      let result;",
               "      try {",
               "        // REV389 Android: valid-license lookups can take longer than an invalid-token lookup",
@@ -55,7 +55,7 @@ jobs:
           assert old in s, 'login API call anchor not found'
           s=s.replace(old,new,1)
           oldcatch="      setStatus(error && error.name === 'AbortError' ? 'Server aktivasi timeout.' : (error.message || String(error)), 'error');"
-          newcatch="\\n".join([
+          newcatch="\n".join([
               "      const msg = error && error.name === 'AbortError'",
               "        ? 'Server aktivasi belum merespons setelah percobaan ulang. Periksa koneksi internet lalu coba lagi.'",
               "        : (error && error.name === 'TypeError'",
