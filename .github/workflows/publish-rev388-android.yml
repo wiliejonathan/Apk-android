@@ -77,10 +77,10 @@ jobs:
           upd.write_text(u.replace("var CURRENT_TAG = 'v1.17.00';","var CURRENT_TAG = 'v1.17.01';",1))
           (root/'README_ANDROID_REV388_SOURCE.txt').write_text('TF Analyzer Analyst Android REV388 / v1.17.01\nHolding Analytics is moved into nav Performance below Performance/Probability Analis.\nHolding = Closed At - Created At; Max and Avg follow active timeframe/date/analyst/pair filters.\n')
           PY
-          node --check "$ROOT/mobile/mobile-app-shell.js"
-          node --check "$ROOT/mobile/assets/dashboard-mobile.js"
-          node --check "$ROOT/mobile/mobile-force-update.js"
-          node --check "$ROOT/mobile/service-worker.js"
+          node --check /tmp/tf-rev388-android/mobile/mobile-app-shell.js
+          node --check /tmp/tf-rev388-android/mobile/assets/dashboard-mobile.js
+          node --check /tmp/tf-rev388-android/mobile/mobile-force-update.js
+          node --check /tmp/tf-rev388-android/mobile/service-worker.js
       - name: Validate REV388 Android source
         run: |
           set -euo pipefail
