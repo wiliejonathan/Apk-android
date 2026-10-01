@@ -1,0 +1,149 @@
+name: Publish Android REV419 pips cards, analyst filters and three-month risk
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release-staging/REV419-apk/READY'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev419-android
+          rm -rf "$ROOT" && mkdir -p "$ROOT/mobile" "$ROOT/base" "$ROOT/signing-ready/assets/www"
+          gh release download v1.17.32 --repo wiliejonathan/tf-analyzer-analyst-ios --pattern 'TF_Analyzer_Analyst_iOS_BROWSER_REV419_PERFORMANCE_ANALYTICS_CARDS.zip' --output "$ROOT/mobile.zip"
+          unzip -tq "$ROOT/mobile.zip"
+          unzip -q "$ROOT/mobile.zip" -d "$ROOT/mobile"
+          gh release download v1.17.16-android --repo "$GITHUB_REPOSITORY" --pattern 'TF.Analyzer.Analyst.V1.17.16_REV403_TABLE_COLUMN_SIZING_FRESH_INSTALL.apk' --output "$ROOT/base/rev401.apk"
+      - name: QA source
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev419-android/mobile
+          node --check "$ROOT/mobile-data-bridge.js"
+          node --check "$ROOT/assets/dashboard-mobile.js"
+          grep -q 'tfMobileRecoverRenderPromiseV402' "$ROOT/mobile-data-bridge.js"
+          grep -q '__TF_MOBILE_IMPORT_FAST_ACTIVE_V402' "$ROOT/mobile-data-bridge.js"
+          grep -q '__TF_MOBILE_SILENT_STORAGE_SET=true' "$ROOT/mobile-data-bridge.js"
+          grep -q 'import-rev402-fast' "$ROOT/mobile-data-bridge.js"
+          grep -q 'function tfMobileRecoverRememberedLinksV401' "$ROOT/mobile-data-bridge.js"
+          grep -q 'tf_renderHoldingPeriodTables(rowsForCalc);' "$ROOT/assets/dashboard-mobile.js"
+          grep -q "remoteRevision: 'REV419'" "$ROOT/mobile-license-gate.js"
+          grep -q "CURRENT_TAG = 'v1.17.32'" "$ROOT/mobile-force-update.js"
+          grep -q 'REV403 — Table 3/Table 4 column sizing polish' "$ROOT/assets/dashboard-original.css"
+          grep -q 'min-width:190px' "$ROOT/assets/dashboard-original.css"
+          grep -q 'width:44%' "$ROOT/assets/dashboard-original.css"
+          node --check "$ROOT/mobile-license-gate.js"
+          (cd "$ROOT" && node --test tests/activation404.cjs tests/import407.cjs tests/performance406.cjs tests/equity412.cjs tests/animation414.cjs tests/risk415.cjs)
+          grep -q 'tf-balance-pips415' "$ROOT/assets/dashboard-mobile.js"
+          grep -q 'analyst-filter-container-holding' "$ROOT/assets/dashboard-mobile.js"
+          grep -q 'User Adjustmend' "$ROOT/assets/dashboard-mobile.js"
+          grep -q 'windowMonths:3' "$ROOT/assets/dashboard-mobile.js"
+          echo 'REV419 Android source QA PASS'
+      - name: Build signing-ready package
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev419-android
+          cp -a "$ROOT/mobile/." "$ROOT/signing-ready/assets/www/"
+          printf '%s\n' 'TF Analyzer Analyst Android REV419 / v1.17.32' 'Table 3/4 column sizing + REV402 fast import retained.' 'For update-in-place, sign with the original production/update key.' > "$ROOT/signing-ready/README_ANDROID_REV419_SIGNING_READY.txt"
+          (cd "$ROOT/signing-ready" && zip -qr "$ROOT/TF_Analyzer_Android_REV419_V1.17.32_PRODUCTION_SIGNING_READY.zip" .)
+          sha256sum "$ROOT/TF_Analyzer_Android_REV419_V1.17.32_PRODUCTION_SIGNING_READY.zip" > "$ROOT/TF_Analyzer_Android_REV419_V1.17.32_PRODUCTION_SIGNING_READY.zip.sha256"
+      - name: Build fresh-install APK
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev419-android
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('/tmp/tf-rev419-android')
+          src=root/'base'/'rev401.apk'
+          out=root/'TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk'
+          web=root/'mobile'
+          with zipfile.ZipFile(src,'r') as zin:
+              infos={i.filename:i for i in zin.infolist()}
+              files={i.filename:zin.read(i.filename) for i in zin.infolist()}
+          keep={}
+          for name,blob in files.items():
+              up=name.upper()
+              if name.startswith('assets/www/'): continue
+              if up.startswith('META-INF/') and (up.endswith('.RSA') or up.endswith('.SF') or up.endswith('MANIFEST.MF')): continue
+              keep[name]=blob
+          data=bytearray(keep['AndroidManifest.xml'])
+          old='1.17.16'.encode('utf-16le'); new='1.17.32'.encode('utf-16le')
+          assert data.count(old)==1
+          data=data.replace(old,new,1)
+          code=bytes([0x08,0x00,0x00,0x10])+(133).to_bytes(4,'little')
+          pos=data.find(code)
+          assert pos>=0 and data.find(code,pos+1)<0
+          data[pos+4:pos+8]=(148).to_bytes(4,'little')
+          keep['AndroidManifest.xml']=bytes(data)
+          updates={}
+          for p in web.rglob('*'):
+              if p.is_file(): updates['assets/www/'+p.relative_to(web).as_posix()]=p.read_bytes()
+          updates['assets/www/README_ANDROID_REV419.txt']=b'TF Analyzer Analyst Android REV419\nVersion: v1.17.32\nVersion Code: 148\nTable 3/4 column sizing + REV402 fast import fixes.\n'
+          with zipfile.ZipFile(out,'w') as zout:
+              for name,blob in keep.items():
+                  info=infos[name]
+                  ni=zipfile.ZipInfo(name,info.date_time)
+                  ni.compress_type=info.compress_type; ni.external_attr=info.external_attr; ni.internal_attr=info.internal_attr
+                  ni.create_system=info.create_system; ni.extra=info.extra; ni.comment=info.comment; ni.flag_bits=info.flag_bits
+                  zout.writestr(ni,blob)
+              for name,blob in sorted(updates.items()):
+                  ni=zipfile.ZipInfo(name,(2026,9,30,20,45,0)); ni.compress_type=zipfile.ZIP_DEFLATED; ni.create_system=3; ni.external_attr=0o100644 << 16
+                  zout.writestr(ni,blob)
+          print(out)
+          PY
+          PW=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$ROOT/rev419-fresh.jks" -storepass "$PW" -keypass "$PW" -alias tfanalyzer-rev419-fresh -keyalg RSA -keysize 3072 -validity 3650 -dname 'CN=TF Analyzer Analyst REV419 Fresh Install, OU=Mobile, O=Skill Fusion, C=ID'
+          jarsigner -keystore "$ROOT/rev419-fresh.jks" -storepass "$PW" -keypass "$PW" -sigalg SHA256withRSA -digestalg SHA-256 "$ROOT/TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk" tfanalyzer-rev419-fresh
+          jarsigner -verify "$ROOT/TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk" >/dev/null
+          unzip -tq "$ROOT/TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='/tmp/tf-rev419-android/TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk'
+          with zipfile.ZipFile(apk) as z:
+              bridge=z.read('assets/www/mobile-data-bridge.js').decode()
+              gate=z.read('assets/www/mobile-license-gate.js').decode()
+              css=z.read('assets/www/assets/dashboard-original.css').decode()
+          assert 'tfMobileRecoverRenderPromiseV402' in bridge
+          assert '__TF_MOBILE_IMPORT_FAST_ACTIVE_V402' in bridge
+          assert "remoteRevision: 'REV419'" in gate
+          assert 'REV403 — Table 3/Table 4 column sizing polish' in css
+          print('REV419 embedded APK QA PASS')
+          PY
+          sha256sum "$ROOT/TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk" > "$ROOT/TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk.sha256"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/tf-rev419-android
+          ZIP="$ROOT/TF_Analyzer_Android_REV419_V1.17.32_PRODUCTION_SIGNING_READY.zip"
+          ZSHA="$ZIP.sha256"
+          APK="$ROOT/TF.Analyzer.Analyst.V1.17.32_REV419_PERFORMANCE_ANALYTICS_CARDS_FRESH_INSTALL.apk"
+          ASHA="$APK.sha256"
+          if gh release view v1.17.32-assets >/dev/null 2>&1; then
+            gh release edit v1.17.32-assets --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV419 - Production Signing Ready' --notes-file release-staging/REV419-apk/RELEASE_NOTES.md --prerelease
+            gh release upload v1.17.32-assets "$ZIP" --clobber
+          else
+            gh release create v1.17.32-assets "$ZIP" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android REV419 - Production Signing Ready' --notes-file release-staging/REV419-apk/RELEASE_NOTES.md --prerelease
+          fi
+          if gh release view v1.17.32-android >/dev/null 2>&1; then
+            gh release edit v1.17.32-android --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.32 - REV419' --notes-file release-staging/REV419-apk/RELEASE_NOTES.md --prerelease
+            gh release upload v1.17.32-android "$APK" --clobber
+          else
+            gh release create v1.17.32-android "$APK" --target "$GITHUB_SHA" --title 'TF Analyzer Analyst Android V1.17.32 - REV419' --notes-file release-staging/REV419-apk/RELEASE_NOTES.md --prerelease
+          fi
+
+
+
