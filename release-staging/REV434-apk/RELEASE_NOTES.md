@@ -1,0 +1,1 @@
+REV434 v1.17.47: four-month analyst risk; reference excludes four newest months; red loss-count threshold strictly exceeds reference maximum +30% (10 →14 red;13 does not cross). Same tested source as iOS/website. APK is a fresh-install build with a new signing key; update-in-place requires original production key. Physical-device testing not performed.
