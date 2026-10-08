@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
           ROOT=/tmp/tf-rev477-android
           rm -rf "$ROOT" && mkdir -p "$ROOT/mobile" "$ROOT/base" "$ROOT/signing-ready/assets/www"
-          gh api repos/wiliejonathan/tf-analyzer-analyst-ios/zipball/9c747387fb0c92c4235fe5729092eb4df4b47cb8 > "$ROOT/mobile.zip"
+          gh api repos/wiliejonathan/tf-analyzer-analyst-ios/zipball/d15ddbec481696226b2bdd857d64aa3d14935d2e > "$ROOT/mobile.zip"
           unzip -tq "$ROOT/mobile.zip"
           mkdir -p "$ROOT/source"
           unzip -q "$ROOT/mobile.zip" -d "$ROOT/source"
