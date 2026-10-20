@@ -10,6 +10,7 @@ on:
       - '!release-staging/REV514-apk/**'
       - '!release-staging/REV516-apk/**'
       - '!release-staging/REV517-apk/**'
+      - '!release-staging/REV518-apk/**'
       - '!release-staging/REV381-apk-only/**'
       - '!release-staging/REV381-signing-ready/**'
       - '!release-staging/REV382-apk-only/**'
