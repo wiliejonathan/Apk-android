@@ -8,6 +8,7 @@ on:
       - '!release-staging/REV511-apk/**'
       - '!release-staging/REV512-apk/**'
       - '!release-staging/REV514-apk/**'
+      - '!release-staging/REV516-apk/**'
       - '!release-staging/REV381-apk-only/**'
       - '!release-staging/REV381-signing-ready/**'
       - '!release-staging/REV382-apk-only/**'
