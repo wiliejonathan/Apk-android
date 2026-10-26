@@ -14,6 +14,7 @@ on:
       - '!release-staging/REV519-apk/**'
       - '!release-staging/REV521-apk/**'
       - '!release-staging/REV522-apk/**'
+      - '!release-staging/REV523-apk/**'
       - '!release-staging/REV381-apk-only/**'
       - '!release-staging/REV381-signing-ready/**'
       - '!release-staging/REV382-apk-only/**'
