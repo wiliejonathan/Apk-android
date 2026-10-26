@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'release-staging/**/READY'
+      - '!release-staging/REV525-apk/**'
       - '!release-staging/REV511-apk/**'
       - '!release-staging/REV512-apk/**'
       - '!release-staging/REV514-apk/**'
